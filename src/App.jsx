@@ -583,6 +583,7 @@ function DatasetBrowser({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
                               {d.name}
                             </span>
                             <Pill label={d.lt} color={d.ltColor} sm/>
+                            {SECOPS_LOG_TYPES.includes(d.lt) ? <Pill label="✓ SecOps" color="#10b981" sm/> : <Pill label="⚠ unmapped" color="#f59e0b" sm/>}
                             {d.source && <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{d.source.split(":").pop()}</span>}
                           </div>
                           <div style={{...mono, fontSize:9, color:"#1e3a5f", wordBreak:"break-all"}}>
@@ -932,9 +933,11 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
 // ─── ENTITY EXPLORER ──────────────────────────────────────────────────────────
 
 function TenantManager({ tenants, setTenants }) {
-  const empty = { name:"", label:"", customerId:"", region:"US", credentials:"" };
+  const empty = { name:"", label:"", customerId:"", region:"US", credentials:"", ingestionLabels:[] };
   const [form, setForm] = useState(empty);
   const [editIdx, setEditIdx] = useState(null);
+  const [labelKey, setLabelKey] = useState("");
+  const [labelVal, setLabelVal] = useState("");
   const f = k => v => setForm(p=>({...p,[k]:v}));
 
   const save = () => {
@@ -942,8 +945,16 @@ function TenantManager({ tenants, setTenants }) {
     if (editIdx !== null) {
       setTenants(t=>t.map((x,i)=>i===editIdx?{...form}:x)); setEditIdx(null);
     } else setTenants(t=>[...t,{...form}]);
-    setForm(empty);
+    setForm(empty); setLabelKey(""); setLabelVal("");
   };
+
+  const addLabel = () => {
+    if (!labelKey.trim()) return;
+    setForm(p=>({...p, ingestionLabels:[...(p.ingestionLabels||[]), {key:labelKey.trim(), value:labelVal.trim()}]}));
+    setLabelKey(""); setLabelVal("");
+  };
+
+  const removeLabel = idx => setForm(p=>({...p, ingestionLabels:(p.ingestionLabels||[]).filter((_,i)=>i!==idx)}));
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -959,9 +970,43 @@ function TenantManager({ tenants, setTenants }) {
               placeholder='{"type":"service_account","project_id":"...","private_key":"..."}' rows={3} mono/>
           </div>
         </div>
+
+        {/* Ingestion Labels */}
+        <div style={{ marginTop:14 }}>
+          <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:8, letterSpacing:"0.08em" }}>
+            INGESTION LABELS (key-value pairs added to every ingested event)
+          </div>
+          {(form.ingestionLabels||[]).length > 0 && (
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
+              {(form.ingestionLabels||[]).map((lbl,i)=>(
+                <span key={i} style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"3px 8px",
+                  background:"#0a1628", border:"1px solid #0c1e38", borderRadius:5,
+                  ...mono, fontSize:10, color:"#22d3ee" }}>
+                  <span style={{ color:"#3d5a7a" }}>{lbl.key}</span>
+                  <span style={{ color:"#1e3a5f" }}>=</span>
+                  <span>{lbl.value}</span>
+                  <span onClick={()=>removeLabel(i)} style={{ cursor:"pointer", color:"#ef4444", marginLeft:2 }}>×</span>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ display:"flex", gap:8, alignItems:"flex-end" }}>
+            <div style={{ flex:1 }}>
+              <Inp label="Key (e.g. env, source, campaign)" value={labelKey} onChange={setLabelKey} mono placeholder="env"/>
+            </div>
+            <div style={{ flex:1 }}>
+              <Inp label="Value (e.g. demo, atomic-labs, rsac-2026)" value={labelVal} onChange={setLabelVal} mono placeholder="demo"/>
+            </div>
+            <Btn onClick={addLabel} sm style={{ marginBottom:1 }}>+ ADD</Btn>
+          </div>
+          <div style={{...mono, fontSize:9, color:"#1e3a5f", marginTop:6 }}>
+            Labels appear as <code style={{color:"#22d3ee"}}>metadata.ingestion_labels</code> in UDM events. Useful for filtering by campaign, tenant, or source in UDM search.
+          </div>
+        </div>
+
         <div style={{ display:"flex", gap:8, marginTop:14 }}>
           <Btn onClick={save}>{editIdx!==null?"UPDATE":"+ ADD TENANT"}</Btn>
-          {editIdx!==null && <Btn variant="secondary" onClick={()=>{setEditIdx(null);setForm(empty);}}>CANCEL</Btn>}
+          {editIdx!==null && <Btn variant="secondary" onClick={()=>{setEditIdx(null);setForm(empty);setLabelKey("");setLabelVal("");}}>CANCEL</Btn>}
         </div>
       </Card>
       {tenants.length === 0 && (
@@ -979,12 +1024,23 @@ function TenantManager({ tenants, setTenants }) {
               <div style={{...mono, fontSize:10, color:"#1e3a5f" }}>
                 {t.customerId?t.customerId.slice(0,20)+"…":"no id"} · {t.region}
               </div>
+              {(t.ingestionLabels||[]).length > 0 && (
+                <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginTop:4 }}>
+                  {t.ingestionLabels.map((lbl,li)=>(
+                    <span key={li} style={{...mono, fontSize:9, color:"#3d5a7a", background:"#040c1a",
+                      border:"1px solid #0c1e38", borderRadius:3, padding:"1px 5px"}}>
+                      {lbl.key}={lbl.value}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div style={{ display:"flex", gap:6, alignItems:"center" }}>
             <Pill label={t.region} color="#22d3ee" sm/>
             {t.credentials && <Pill label="creds ✓" color="#10b981" sm/>}
-            <Btn variant="ghost" sm onClick={()=>{setForm({...t});setEditIdx(i);}}>edit</Btn>
+            {(t.ingestionLabels||[]).length > 0 && <Pill label={`${t.ingestionLabels.length} labels`} color="#8b5cf6" sm/>}
+            <Btn variant="ghost" sm onClick={()=>{setForm({...t, ingestionLabels:t.ingestionLabels||[]});setEditIdx(i);}}>edit</Btn>
             <Btn variant="danger" sm onClick={()=>setTenants(t=>t.filter((_,j)=>j!==i))}>×</Btn>
           </div>
         </Card>
@@ -1207,9 +1263,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-${tenants.map(t=>`          - tenant_id: ${t.name.toUpperCase().replace(/[^A-Z0-9]/g,"_")}
+${tenants.map(t=>{
+  const labelStr = (t.ingestionLabels||[]).length > 0
+    ? "\n            ingestion_labels: \"" + t.ingestionLabels.map(l=>`${l.key}=${l.value}`).join(",") + "\""
+    : "";
+  return `          - tenant_id: ${t.name.toUpperCase().replace(/[^A-Z0-9]/g,"_")}
             tenant_display: "${t.label||t.name}"
-            region: ${t.region}`).join("\n")}
+            region: ${t.region}${labelStr}`;
+}).join("\n")}
 
     steps:
       - name: Checkout this repo (workflow + scripts only)
@@ -1262,7 +1323,7 @@ ${flowSteps.map((s,i) => {
             --log-type "${safeLt}" \\
             --credentials /tmp/secops_creds.json \\
             --customer-id "\${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}" \\
-            --region "\${{ matrix.region }}" \\
+            --region "\${{ matrix.region }}"\${{ matrix.ingestion_labels && format(' --labels {0}', matrix.ingestion_labels) || '' }} \\
             --timestamp-delta "${delta}"
 
       - name: "Pass 2 — Entities: ${s.name}"
@@ -1276,7 +1337,7 @@ ${flowSteps.map((s,i) => {
             --log-type "${safeLt}" \\
             --credentials /tmp/secops_creds.json \\
             --customer-id "\${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}" \\
-            --region "\${{ matrix.region }}" \\
+            --region "\${{ matrix.region }}"\${{ matrix.ingestion_labels && format(' --labels {0}', matrix.ingestion_labels) || '' }} \\
             --timestamp-delta "${delta}" \\
             --entities`;
 }).join("\n\n")}
@@ -1889,7 +1950,7 @@ function StatusMonitor({ tenants, ghToken, ghRepo, setGhRepo }) {
     <Card style={{ padding:24, textAlign:"center" }}>
       <div style={{...mono, fontSize:12, color:"#f59e0b", marginBottom:12 }}>⚠ Configure your GitHub repo to load real run data</div>
       <div style={{ maxWidth:340, margin:"0 auto" }}>
-        <Inp label="GitHub repo (owner/repo)" value={ghRepo} onChange={setGhRepo} mono placeholder="keith-manville/logstory-orchestrator"/>
+        <Inp label="GitHub repo (owner/repo)" value={ghRepo} onChange={setGhRepo} mono placeholder="keith-manville/demo-data"/>
       </div>
       <div style={{...mono, fontSize:10, color:"#1e3a5f", marginTop:10 }}>
         Set your GitHub token in the Datasets tab for authenticated access (5,000 req/hr).
@@ -2034,7 +2095,7 @@ function StatusMonitor({ tenants, ghToken, ghRepo, setGhRepo }) {
       {/* repo input */}
       <Card>
         <SectionLabel>REPO SETTINGS</SectionLabel>
-        <Inp label="GitHub repo (owner/repo)" value={ghRepo} onChange={setGhRepo} mono placeholder="keith-manville/logstory-orchestrator"/>
+        <Inp label="GitHub repo (owner/repo)" value={ghRepo} onChange={setGhRepo} mono placeholder="keith-manville/demo-data"/>
         <div style={{...mono, fontSize:10, color:"#1e3a5f", marginTop:8 }}>
           Fetches <code style={{ color:"#22d3ee" }}>logstory-replay.yml</code> workflow runs. Set your GitHub token in the Datasets tab.
         </div>
@@ -2099,7 +2160,7 @@ export default function App() {
   const [schedule, setSchedule]   = useState("1 0 * * *");
   const [delta, setDelta]         = useState("1d");
   const [ghToken, setGhToken]     = useState("");
-  const [ghRepo, setGhRepo]       = useState("your-org/your-repo");
+  const [ghRepo, setGhRepo]       = useState("keith-manville/demo-data");
 
   const badges = {
     flow: flowSteps.length, datasets: 0,
