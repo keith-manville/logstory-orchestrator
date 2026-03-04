@@ -168,28 +168,6 @@ function toMediaUrl(path) {
 }
 
 // ─── STATIC ENTITIES (Attack Range lab — these are real, from the datasets) ──
-const STATIC_ENTITIES = [
-  {id:"e1",type:"hostname",value:"ar-win-dc.attackrange.local",role:"Domain Controller",techniques:["T1003.003","T1003.006","T1558.001","T1558.003","T1550.002"],desc:"Primary AD domain controller in Attack Range"},
-  {id:"e2",type:"hostname",value:"ar-win-2.attackrange.local",role:"Workstation",techniques:["T1003.001","T1059.001","T1082","T1053.005","T1218"],desc:"Primary victim Windows workstation"},
-  {id:"e3",type:"hostname",value:"ar-win-3.attackrange.local",role:"Workstation",techniques:["T1047","T1550.002"],desc:"Secondary workstation — lateral movement target"},
-  {id:"e4",type:"user",value:"ATTACKRANGE\\Administrator",role:"Domain Admin",techniques:["T1003.001","T1003.003","T1003.006","T1558.003"],desc:"Built-in domain administrator account"},
-  {id:"e5",type:"user",value:"ATTACKRANGE\\splunk",role:"Service Account",techniques:["T1053.005","T1047"],desc:"Splunk service account — abused in persistence scenarios"},
-  {id:"e6",type:"user",value:"NT AUTHORITY\\SYSTEM",role:"System",techniques:["T1003.001","T1059.001"],desc:"SYSTEM context — highest privilege processes"},
-  {id:"e7",type:"process",value:"lsass.exe",role:"Target Process",techniques:["T1003.001","T1003.006"],desc:"Local Security Authority Subsystem — primary cred dump target"},
-  {id:"e8",type:"process",value:"procdump.exe",role:"Attack Tool",techniques:["T1003.001"],desc:"Sysinternals ProcDump — LSASS memory dump"},
-  {id:"e9",type:"process",value:"mimikatz.exe",role:"Attack Tool",techniques:["T1003.003","T1003.006","T1558.001"],desc:"Credential extraction: DCSync, golden ticket, sekurlsa"},
-  {id:"e10",type:"process",value:"powershell.exe",role:"Interpreter",techniques:["T1059.001","T1053.005","T1047","T1003.006"],desc:"PowerShell — primary scripting engine for attack chains"},
-  {id:"e11",type:"process",value:"cmd.exe",role:"Interpreter",techniques:["T1082","T1218","T1047"],desc:"Command prompt — common parent of attack tool execution"},
-  {id:"e12",type:"process",value:"wmic.exe",role:"Attack Tool",techniques:["T1047"],desc:"WMI CLI — remote execution and lateral movement"},
-  {id:"e13",type:"hash",value:"aad3b435b51404eeaad3b435b51404ee",role:"NTLM Hash",techniques:["T1550.002"],desc:"Empty NTLM password hash — seen in pass-the-hash"},
-  {id:"e14",type:"domain",value:"ATTACKRANGE.LOCAL",role:"AD Domain",techniques:["T1003.006","T1558.001","T1558.003","T1550.002"],desc:"Active Directory domain for Attack Range lab"},
-  {id:"e15",type:"ip",value:"10.0.1.4",role:"DC IP",techniques:["T1003.006","T1558.001","T1558.003","T1550.002"],desc:"IP of domain controller"},
-  {id:"e16",type:"ip",value:"10.0.1.12",role:"Workstation IP",techniques:["T1047","T1550.002"],desc:"Internal IP of victim workstation"},
-  {id:"e17",type:"process",value:"svchost.exe",role:"System Process",techniques:["T1053.005"],desc:"Service host — process injection target"},
-  {id:"e18",type:"file",value:"C:\\Windows\\Temp\\",role:"Staging Path",techniques:["T1003.001","T1218"],desc:"Common payload staging directory"},
-  {id:"e19",type:"process",value:"ntdsutil.exe",role:"Attack Tool",techniques:["T1003.003"],desc:"AD database utility — used for NTDS.dit extraction"},
-  {id:"e20",type:"process",value:"reg.exe",role:"Attack Tool",techniques:["T1547.001","T1112"],desc:"Registry CLI — persistence and config manipulation"},
-];
 
 // ─── FLOW TEMPLATES ───────────────────────────────────────────────────────────
 const FLOW_TEMPLATES = [
@@ -211,13 +189,7 @@ const FLOW_TEMPLATES = [
 ];
 
 // ─── SAMPLE JOB HISTORY ──────────────────────────────────────────────────────
-const SAMPLE_JOBS = [
-  {id:"j1",tenant:"acme-prod",status:"success",startedAt:"2026-03-04T00:01:12Z",duration:94,datasets:3,trigger:"schedule",bytes:1842000},
-  {id:"j2",tenant:"demo-us",status:"success",startedAt:"2026-03-04T00:01:18Z",duration:87,datasets:3,trigger:"schedule",bytes:1290000},
-  {id:"j3",tenant:"workshop-eu",status:"failed",startedAt:"2026-03-03T00:01:05Z",duration:12,datasets:2,trigger:"schedule",error:"HTTP 403 on media.githubusercontent.com — rate limit or bad URL"},
-  {id:"j4",tenant:"acme-prod",status:"success",startedAt:"2026-03-03T00:01:09Z",duration:112,datasets:4,trigger:"schedule",bytes:2640000},
-  {id:"j5",tenant:"demo-us",status:"success",startedAt:"2026-03-02T00:01:22Z",duration:79,datasets:3,trigger:"manual",bytes:1290000},
-];
+
 
 // ─── STYLES / PRIMITIVES ──────────────────────────────────────────────────────
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700;800&display=swap');`;
@@ -930,14 +902,7 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
                             <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>SECOPS LOG TYPE</div>
                             <Pill label={s.lt} color={s.ltColor||"#475569"} sm/>
                           </div>
-                          <div>
-                            <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>ENTITIES IN LOG</div>
-                            <div style={{ display:"flex", flexWrap:"wrap", gap:3 }}>
-                              {STATIC_ENTITIES.filter(e=>e.techniques.some(t=>(s.mitre||[s.technique]).includes(t))).slice(0,4).map(e=>(
-                                <Pill key={e.id} label={e.value.length>18?e.value.slice(0,16)+"…":e.value} color="#8b5cf6" sm/>
-                              ))}
-                            </div>
-                          </div>
+
                         </div>
                       </div>
                     )}
@@ -965,112 +930,6 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
 }
 
 // ─── ENTITY EXPLORER ──────────────────────────────────────────────────────────
-
-function EntityExplorer({ flowSteps }) {
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState(null);
-
-  const TYPE_ICONS = {hostname:"🖥",user:"👤",process:"⚙️",ip:"🌐",domain:"🏛",hash:"#️⃣",file:"📄"};
-  const TYPE_COLORS = {hostname:"#3b82f6",user:"#a855f7",process:"#f59e0b",ip:"#22d3ee",domain:"#10b981",hash:"#ec4899",file:"#64748b"};
-
-  // Filter entities relevant to current flow
-  const flowTechs = new Set(flowSteps.flatMap(s => s.mitre || [s.technique]));
-  const entities = STATIC_ENTITIES.filter(e => {
-    const relevant = flowSteps.length === 0 || e.techniques.some(t => flowTechs.has(t));
-    const matchType = typeFilter === "all" || e.type === typeFilter;
-    const matchSearch = !search || e.value.toLowerCase().includes(search.toLowerCase())
-      || e.role.toLowerCase().includes(search.toLowerCase());
-    return relevant && matchType && matchSearch;
-  });
-
-  const types = ["all","hostname","user","process","ip","domain","hash","file"];
-  const typeCounts = {};
-  entities.forEach(e => { typeCounts[e.type] = (typeCounts[e.type]||0)+1; });
-
-  return (
-    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-      {flowSteps.length > 0 && (
-        <div style={{ padding:"8px 14px", background:"#091828", border:"1px solid #22d3ee20",
-          borderRadius:8, ...mono, fontSize:10, color:"#22d3ee" }}>
-          Showing entities relevant to your {flowSteps.length}-step attack flow
-          ({flowTechs.size} unique techniques) — {entities.length} matching
-        </div>
-      )}
-      {flowSteps.length === 0 && (
-        <div style={{ padding:"8px 14px", background:"#1a1000", border:"1px solid #f59e0b20",
-          borderRadius:8, ...mono, fontSize:10, color:"#f59e0b" }}>
-          ⓘ Build an attack flow first to filter entities to your specific chain
-        </div>
-      )}
-
-      <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-        {types.map(t => (
-          <button key={t} onClick={()=>setTypeFilter(t)}
-            style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
-              borderRadius:20, background: typeFilter===t?`${TYPE_COLORS[t]||"#22d3ee"}18`:"transparent",
-              border:`1px solid ${typeFilter===t?TYPE_COLORS[t]||"#22d3ee":"#0c1e38"}`,
-              color: typeFilter===t?TYPE_COLORS[t]||"#22d3ee":"#3d5a7a",
-              ...mono, fontSize:10, cursor:"pointer" }}>
-            {TYPE_ICONS[t]||"◉"} {t}
-            {t!=="all" && typeCounts[t] && <span style={{ opacity:.6, fontSize:9 }}>({typeCounts[t]})</span>}
-          </button>
-        ))}
-        <div style={{ flex:1, minWidth:160 }}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="search value or role…"
-            style={{ width:"100%", background:"#030a17", border:"1px solid #0c1e38", borderRadius:20,
-              padding:"5px 14px", color:"#c8d8f0", ...mono, fontSize:10, outline:"none" }}/>
-        </div>
-      </div>
-
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-        {entities.map(e => {
-          const col = TYPE_COLORS[e.type]||"#475569";
-          const isSel = selected?.id === e.id;
-          return (
-            <div key={e.id} onClick={()=>setSelected(isSel?null:e)}
-              style={{ padding:14, borderRadius:9, cursor:"pointer",
-                background: isSel?"#091828":"#060f20",
-                border:`1px solid ${isSel?"#22d3ee30":"#0c1e38"}`,
-                transition:"all .15s", animation:"slideUp .2s" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <span style={{ fontSize:16 }}>{TYPE_ICONS[e.type]||"◉"}</span>
-                  <div>
-                    <div style={{...mono, fontSize:11, color:"#c8d8f0", fontWeight:600, wordBreak:"break-all" }}>{e.value}</div>
-                    <div style={{...mono, fontSize:9, color:col, marginTop:2 }}>{e.role}</div>
-                  </div>
-                </div>
-                <Pill label={e.type} color={col} sm/>
-              </div>
-              <div style={{...sans, fontSize:10, color:"#2a4060", marginBottom:8 }}>{e.desc}</div>
-              <div>
-                <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>RELEVANT TECHNIQUES</div>
-                <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
-                  {e.techniques.map(t => {
-                    const inFlow = flowTechs.has(t);
-                    return (
-                      <span key={t} style={{...mono, fontSize:9, padding:"2px 6px", borderRadius:3,
-                        background: inFlow?"#22d3ee15":"#0c1e38",
-                        color: inFlow?"#22d3ee":"#3d5a7a",
-                        border:`1px solid ${inFlow?"#22d3ee30":"#0c1e38"}`}}>{t}</span>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        {entities.length === 0 && (
-          <div style={{ gridColumn:"1/-1", padding:"32px 0", textAlign:"center",
-            ...sans, fontSize:12, color:"#1e3a5f" }}>No entities match your filters</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── TENANT MANAGER ───────────────────────────────────────────────────────────
 
 function TenantManager({ tenants, setTenants }) {
   const empty = { name:"", label:"", customerId:"", region:"US", credentials:"" };
@@ -1210,10 +1069,8 @@ function buildEntityNdjson(flowSteps) {
   const now = new Date().toISOString();
   const techniques = new Set(flowSteps.flatMap(s => s.mitre || [s.technique]));
 
-  // Derive relevant known entities from static list
-  const relevant = STATIC_ENTITIES.filter(e =>
-    e.techniques.some(t => techniques.has(t))
-  );
+  // Entity list removed — returns empty (entities extracted from logs at runtime)
+  const relevant = [];
 
   const lines = [];
 
@@ -1933,45 +1790,82 @@ if __name__ == "__main__":
 
 // ─── STATUS MONITOR ───────────────────────────────────────────────────────────
 
-function StatusMonitor({ tenants }) {
-  const [jobs, setJobs] = useState(SAMPLE_JOBS);
-  const [simRunning, setSimRunning] = useState(false);
+function StatusMonitor({ tenants, ghToken, ghRepo, setGhRepo }) {
+  const [runs, setRuns] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(null);
-  const [ghRepo, setGhRepo] = useState("your-org/your-repo");
+  const [triggering, setTriggering] = useState(false);
+  const [lastFetch, setLastFetch] = useState(null);
 
-  const stats = {
-    total: jobs.length,
-    success: jobs.filter(j=>j.status==="success").length,
-    failed: jobs.filter(j=>j.status==="failed").length,
-    running: jobs.filter(j=>j.status==="running").length,
-    totalBytes: jobs.reduce((a,j)=>a+(j.bytes||0),0),
-  };
+  const repoValid = ghRepo && ghRepo.includes("/") && !ghRepo.startsWith("your-");
 
-  const tenantNames = [...new Set(jobs.map(j=>j.tenant))];
-
-  const triggerRun = () => {
-    if (simRunning) return;
-    setSimRunning(true);
-    const list = tenants.length > 0 ? tenants.map(t=>t.name) : ["acme-prod","demo-us"];
-    const newJobs = list.map((t,i) => ({
-      id:`sim-${Date.now()}-${i}`, tenant:t, status:"running",
-      startedAt: new Date().toISOString(), duration:0, datasets:3, trigger:"manual"
-    }));
-    setJobs(j=>[...newJobs,...j]);
-    setTimeout(()=>{
-      setJobs(j=>j.map(job => {
-        const n = newJobs.find(x=>x.id===job.id);
-        if (!n) return job;
-        const ok = Math.random() > 0.12;
-        return {...job, status: ok?"success":"failed",
-          duration: Math.floor(80+Math.random()*100),
-          bytes: ok ? Math.floor(900000+Math.random()*2000000) : 0,
-          error: ok ? undefined : "curl: HTTP 403 from media.githubusercontent.com — check dataset URL"
-        };
+  const fetchRuns = async () => {
+    if (!repoValid) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const headers = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+      if (ghToken) headers.Authorization = `Bearer ${ghToken}`;
+      const res = await fetch(
+        `https://api.github.com/repos/${ghRepo}/actions/workflows/logstory-replay.yml/runs?per_page=30`,
+        { headers }
+      );
+      if (!res.ok) throw new Error(`GitHub API ${res.status}: ${res.statusText}`);
+      const data = await res.json();
+      const mapped = (data.workflow_runs || []).map(r => ({
+        id: String(r.id),
+        tenant: r.name || "—",
+        status: r.conclusion === "success" ? "success"
+              : r.conclusion === "failure" ? "failed"
+              : r.status === "in_progress" ? "running"
+              : r.conclusion || r.status || "unknown",
+        startedAt: r.created_at,
+        duration: r.updated_at && r.created_at
+          ? Math.round((new Date(r.updated_at) - new Date(r.created_at)) / 1000)
+          : 0,
+        trigger: r.event === "schedule" ? "schedule" : r.event === "workflow_dispatch" ? "manual" : r.event || "—",
+        url: r.html_url,
+        branch: r.head_branch,
+        actor: r.actor?.login,
+        runNumber: r.run_number,
       }));
-      setSimRunning(false);
-    }, 3800);
+      setRuns(mapped);
+      setLastFetch(new Date());
+    } catch(e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const triggerRun = async () => {
+    if (!repoValid || !ghToken) return;
+    setTriggering(true);
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${ghRepo}/actions/workflows/logstory-replay.yml/dispatches`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${ghToken}`,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28"
+          },
+          body: JSON.stringify({ ref: "main" })
+        }
+      );
+      if (!res.ok) throw new Error(`Dispatch failed: ${res.status}`);
+      setTimeout(fetchRuns, 3000);
+    } catch(e) {
+      setError(e.message);
+    } finally {
+      setTriggering(false);
+    }
+  };
+
+  useEffect(() => { if (repoValid) fetchRuns(); }, [ghRepo, ghToken]);
 
   const fmt = iso => {
     const d = new Date(iso);
@@ -1980,16 +1874,71 @@ function StatusMonitor({ tenants }) {
   };
   const fmtBytes = b => b > 1e6 ? `${(b/1e6).toFixed(1)} MB` : b > 1e3 ? `${(b/1e3).toFixed(0)} KB` : `${b} B`;
 
+  const stats = {
+    total: runs.length,
+    success: runs.filter(j=>j.status==="success").length,
+    failed: runs.filter(j=>j.status==="failed").length,
+    running: runs.filter(j=>j.status==="running").length,
+  };
+
+  // Tenant health derived from run names/branches — group by actor or just show per-run
+  // Since GH Actions runs don't inherently tag by tenant, we show per-run health
+  const successRate = runs.length > 0 ? Math.round(stats.success / runs.length * 100) : 0;
+
+  if (!repoValid) return (
+    <Card style={{ padding:24, textAlign:"center" }}>
+      <div style={{...mono, fontSize:12, color:"#f59e0b", marginBottom:12 }}>⚠ Configure your GitHub repo to load real run data</div>
+      <div style={{ maxWidth:340, margin:"0 auto" }}>
+        <Inp label="GitHub repo (owner/repo)" value={ghRepo} onChange={setGhRepo} mono placeholder="keith-manville/logstory-orchestrator"/>
+      </div>
+      <div style={{...mono, fontSize:10, color:"#1e3a5f", marginTop:10 }}>
+        Set your GitHub token in the Datasets tab for authenticated access (5,000 req/hr).
+      </div>
+    </Card>
+  );
+
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+
+      {/* header + controls */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{...mono, fontSize:11, color:"#3d5a7a" }}>
+            {ghRepo}
+            {lastFetch && <span style={{ color:"#1e3a5f", marginLeft:8 }}>· fetched {fmt(lastFetch)}</span>}
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <Btn onClick={fetchRuns} disabled={loading} variant="secondary" sm>
+            {loading ? "⟳ loading…" : "↻ refresh"}
+          </Btn>
+          <Btn onClick={triggerRun} disabled={triggering || !ghToken} sm>
+            {triggering ? "⟳ dispatching…" : "▶ trigger run"}
+          </Btn>
+        </div>
+      </div>
+
+      {!ghToken && (
+        <div style={{ padding:"10px 14px", background:"#1a0f00", border:"1px solid #f59e0b28",
+          borderRadius:7, ...mono, fontSize:10, color:"#f59e0b" }}>
+          ⓘ Add your GitHub token in the Datasets tab to trigger runs and increase rate limits.
+        </div>
+      )}
+
+      {error && (
+        <div style={{ padding:"10px 14px", background:"#1a0808", border:"1px solid #ef444330",
+          borderRadius:7, ...mono, fontSize:10, color:"#ef4444" }}>
+          ⚠ {error}
+        </div>
+      )}
+
       {/* stats */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:10 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
         {[
-          {l:"Total Runs",v:stats.total,c:"#22d3ee"},
-          {l:"Successful",v:stats.success,c:"#10b981"},
-          {l:"Failed",v:stats.failed,c:"#ef4444"},
-          {l:"Running",v:stats.running+(simRunning?(tenants.length||2):0),c:"#f59e0b"},
-          {l:"Data Ingested",v:fmtBytes(stats.totalBytes),c:"#8b5cf6"},
+          {l:"Total Runs", v: loading ? "…" : stats.total, c:"#22d3ee"},
+          {l:"Successful",  v: loading ? "…" : stats.success, c:"#10b981"},
+          {l:"Failed",      v: loading ? "…" : stats.failed,  c:"#ef4444"},
+          {l:"Success Rate",v: loading ? "…" : `${successRate}%`, c: successRate>80?"#10b981":successRate>50?"#f59e0b":"#ef4444"},
         ].map(s=>(
           <Card key={s.l} style={{ textAlign:"center", padding:"14px 10px" }}>
             <div style={{...sans, fontSize:22, fontWeight:800, color:s.c, marginBottom:4 }}>{s.v}</div>
@@ -1998,67 +1947,58 @@ function StatusMonitor({ tenants }) {
         ))}
       </div>
 
-      {/* tenant health */}
-      <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-          <SectionLabel>TENANT HEALTH</SectionLabel>
-          <Btn onClick={triggerRun} disabled={simRunning}>
-            {simRunning ? "⟳ RUNNING…" : "▶ TRIGGER MANUAL RUN"}
-          </Btn>
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))", gap:8 }}>
-          {tenantNames.map(name=>{
-            const tj = jobs.filter(j=>j.tenant===name);
-            const last = tj[0];
-            const sr = Math.round(tj.filter(j=>j.status==="success").length/tj.length*100);
-            const running = simRunning && (tenants.length===0 || tenants.find(t=>t.name===name));
-            return (
-              <div key={name} style={{ padding:"12px 14px", borderRadius:8, background:"#040c1a",
-                border:`1px solid ${last?.status==="failed"?"#ef444430":"#0c1e38"}` }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-                  <span style={{...mono, fontSize:11, color:"#c8d8f0", fontWeight:600 }}>{name}</span>
-                  <Dot status={running?"running":last?.status||"idle"}/>
-                </div>
-                <div style={{ height:3, background:"#0c1e38", borderRadius:2, marginBottom:8, overflow:"hidden" }}>
-                  <div style={{ height:"100%", width:`${sr}%`, transition:"width .6s",
-                    background: sr>80?"#10b981":sr>50?"#f59e0b":"#ef4444", borderRadius:2 }}/>
-                </div>
-                <div style={{...mono, fontSize:9, color:"#1e3a5f" }}>{sr}% success · {tj.length} runs</div>
-                {last?.bytes > 0 && <div style={{...mono, fontSize:9, color:"#1e3a5f" }}>last: {fmtBytes(last.bytes)}</div>}
-                {last?.status==="failed" && <div style={{...mono, fontSize:9, color:"#ef4444", marginTop:3 }}>⚠ last run failed</div>}
-              </div>
-            );
-          })}
-          {tenantNames.length===0 && (
-            <div style={{ gridColumn:"1/-1", padding:"24px 0", textAlign:"center",
-              ...sans, fontSize:12, color:"#1e3a5f" }}>Configure tenants to see health</div>
-          )}
-        </div>
-      </Card>
+      {/* success rate bar */}
+      {runs.length > 0 && (
+        <Card>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <SectionLabel>WORKFLOW HEALTH · {ghRepo}</SectionLabel>
+            <span style={{...mono, fontSize:10, color: successRate>80?"#10b981":successRate>50?"#f59e0b":"#ef4444" }}>{successRate}%</span>
+          </div>
+          <div style={{ height:6, background:"#0c1e38", borderRadius:3, overflow:"hidden" }}>
+            <div style={{ height:"100%", width:`${successRate}%`, transition:"width .6s",
+              background: successRate>80?"#10b981":successRate>50?"#f59e0b":"#ef4444", borderRadius:3 }}/>
+          </div>
+          <div style={{...mono, fontSize:9, color:"#1e3a5f", marginTop:6 }}>
+            {stats.success} succeeded · {stats.failed} failed · {stats.running} in progress · last 30 runs
+          </div>
+        </Card>
+      )}
 
       {/* run log */}
       <Card>
-        <SectionLabel>RUN LOG</SectionLabel>
+        <SectionLabel>RUN LOG — {ghRepo}</SectionLabel>
+        {loading && runs.length === 0 && (
+          <div style={{ padding:"24px 0", textAlign:"center", ...mono, fontSize:11, color:"#1e3a5f" }}>
+            <Spinner/><span style={{ marginLeft:10 }}>Loading workflow runs from GitHub…</span>
+          </div>
+        )}
+        {!loading && runs.length === 0 && !error && (
+          <div style={{ padding:"24px 0", textAlign:"center", ...mono, fontSize:11, color:"#1e3a5f" }}>
+            No runs found for <code style={{ color:"#22d3ee" }}>logstory-replay.yml</code> in {ghRepo}
+          </div>
+        )}
         <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          {jobs.map(j=>(
+          {runs.map(j=>(
             <div key={j.id}>
               <div onClick={()=>setExpanded(expanded===j.id?null:j.id)}
                 style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
                   padding:"10px 12px", borderRadius:7, cursor:"pointer",
                   background:expanded===j.id?"#060f20":"#040c1a",
                   border:`1px solid ${j.status==="failed"?"#ef444330":j.status==="running"?"#22d3ee30":"#0c1e38"}`,
-                  transition:"all .15s", animation:"slideUp .2s" }}>
+                  transition:"all .15s" }}>
                 <div style={{ display:"flex", alignItems:"center", gap:12 }}>
                   <Dot status={j.status}/>
                   <div>
-                    <div style={{...mono, fontSize:12, color:"#c8d8f0", fontWeight:600 }}>{j.tenant}</div>
+                    <div style={{...mono, fontSize:12, color:"#c8d8f0", fontWeight:600 }}>
+                      run #{j.runNumber}
+                      {j.actor && <span style={{ color:"#3d5a7a", fontWeight:400 }}> · {j.actor}</span>}
+                    </div>
                     <div style={{...mono, fontSize:9, color:"#1e3a5f" }}>{fmt(j.startedAt)}</div>
                   </div>
                 </div>
                 <div style={{ display:"flex", gap:7, alignItems:"center" }}>
                   <Pill label={j.trigger} color="#3d5a7a" sm/>
-                  <Pill label={`${j.datasets} datasets`} color="#22d3ee" sm/>
-                  {j.bytes > 0 && <span style={{...mono, fontSize:9, color:"#1e3a5f" }}>{fmtBytes(j.bytes)}</span>}
+                  {j.branch && <Pill label={j.branch} color="#22d3ee" sm/>}
                   {j.duration > 0 && <span style={{...mono, fontSize:9, color:"#1e3a5f" }}>{j.duration}s</span>}
                   <Pill label={j.status} color={j.status==="success"?"#10b981":j.status==="failed"?"#ef4444":j.status==="running"?"#22d3ee":"#475569"} sm/>
                   <span style={{ color:"#1e3a5f", fontSize:10 }}>{expanded===j.id?"▲":"▼"}</span>
@@ -2067,22 +2007,23 @@ function StatusMonitor({ tenants }) {
               {expanded===j.id && (
                 <div style={{ padding:"12px 14px", background:"#030a17",
                   borderLeft:"3px solid #0c1e38", marginBottom:2 }}>
-                  {j.error && (
-                    <div style={{ padding:"8px 12px", background:"#1a0808", border:"1px solid #ef444328",
-                      borderRadius:6, marginBottom:10, ...mono, fontSize:10, color:"#ef4444" }}>
-                      {j.error}
-                    </div>
-                  )}
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
-                    {[["Tenant",j.tenant],["Trigger",j.trigger],["Duration",j.duration>0?`${j.duration}s`:"in progress"],
-                      ["Data",j.bytes>0?fmtBytes(j.bytes):"—"],["Started",fmt(j.startedAt)],["Status",j.status],
-                      ["Datasets",j.datasets],["Job ID",j.id]].map(([k,v])=>(
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:10 }}>
+                    {[["Run #",j.runNumber],["Trigger",j.trigger],["Branch",j.branch||"—"],
+                      ["Actor",j.actor||"—"],["Started",fmt(j.startedAt)],["Status",j.status],
+                      ["Duration",j.duration>0?`${j.duration}s`:"—"],["Run ID",j.id]
+                    ].map(([k,v])=>(
                       <div key={k}>
                         <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:2 }}>{k.toUpperCase()}</div>
                         <div style={{...mono, fontSize:10, color:"#6a8aaa" }}>{String(v)}</div>
                       </div>
                     ))}
                   </div>
+                  {j.url && (
+                    <a href={j.url} target="_blank" rel="noopener noreferrer"
+                      style={{...mono, fontSize:10, color:"#22d3ee", textDecoration:"none" }}>
+                      → view on GitHub ↗
+                    </a>
+                  )}
                 </div>
               )}
             </div>
@@ -2090,29 +2031,13 @@ function StatusMonitor({ tenants }) {
         </div>
       </Card>
 
-      {/* GitHub CLI commands */}
+      {/* repo input */}
       <Card>
-        <SectionLabel>MONITOR VIA GITHUB CLI</SectionLabel>
-        <div style={{ marginBottom:10 }}>
-          <Inp label="Your repo (owner/repo)" value={ghRepo} onChange={setGhRepo} mono/>
+        <SectionLabel>REPO SETTINGS</SectionLabel>
+        <Inp label="GitHub repo (owner/repo)" value={ghRepo} onChange={setGhRepo} mono placeholder="keith-manville/logstory-orchestrator"/>
+        <div style={{...mono, fontSize:10, color:"#1e3a5f", marginTop:8 }}>
+          Fetches <code style={{ color:"#22d3ee" }}>logstory-replay.yml</code> workflow runs. Set your GitHub token in the Datasets tab.
         </div>
-        <CodeBlock filename="monitoring commands" code={`# List recent workflow runs
-gh run list --repo ${ghRepo} --workflow=logstory-replay.yml --limit=20
-
-# Watch a live run in real time
-gh run watch --repo ${ghRepo}
-
-# View logs for a specific run
-gh run view <run-id> --repo ${ghRepo} --log
-
-# Trigger manually for all tenants
-gh workflow run logstory-replay.yml --repo ${ghRepo}
-
-# Trigger for a specific tenant
-gh workflow run logstory-replay.yml --repo ${ghRepo} -f tenant_filter=acme-prod
-
-# Download run logs as artifact
-gh run download <run-id> --repo ${ghRepo}`} maxH="200px"/>
       </Card>
     </div>
   );
@@ -2124,7 +2049,6 @@ gh run download <run-id> --repo ${ghRepo}`} maxH="200px"/>
 // Campaigns: GET /api/v3/collections?filter=name:{query}
 // TTPs:      Embedded in relationships → attack_techniques on actor/collection objects
 
-const GTI_BASE = "https://gti-cors-proxy.twoseven.workers.dev/vt-proxy/api/v3";
 
 // Kill-chain phase ordering for sorting TTPs into a narrative flow
 const PHASE_ORDER = [
@@ -2150,496 +2074,9 @@ const KNOWN_ACTORS = [
 
 
 
-function ThreatIntelTab({ flowSteps, setFlowSteps, gtiToken, setGtiToken, ghToken }) {
-  const [query, setQuery]           = useState("");
-  const [searchType, setSearchType] = useState("actor"); // actor | campaign
-  const [loading, setLoading]       = useState(false);
-  const [result, setResult]         = useState(null);
-  const [error, setError]           = useState(null);
-  const [showToken, setShowToken]   = useState(false);
-  const [tokenInput, setTokenInput] = useState(gtiToken);
-  const [coverage, setCoverage]     = useState({}); // technique → "matched"|"unmatched"|"loading"
-  const [buildingFlow, setBuildingFlow] = useState(false);
-  const [selectedTtps, setSelectedTtps] = useState(new Set());
-  const [tacticFilter, setTacticFilter] = useState("all");
-
-  // Check attack_data coverage for each TTP
-  const checkCoverage = async (ttps) => {
-    const result = {};
-    // First pass — check local cache
-    for (const t of ttps) {
-      const baseId = t.id.split(".")[0];
-      if (cache.yamls[t.id]) { result[t.id] = "matched"; continue; }
-      if (cache.yamls[baseId]) { result[t.id] = "matched"; continue; }
-      result[t.id] = "unknown";
-    }
-    setCoverage({...result});
-
-    // Second pass — check GitHub API for unknowns
-    const unknown = ttps.filter(t => result[t.id] === "unknown");
-    for (const t of unknown) {
-      setCoverage(prev => ({...prev, [t.id]: "loading"}));
-      try {
-        const headers = ghToken ? { Authorization: `token ${ghToken}` } : {};
-        // Try exact match first, then parent technique
-        const candidates = [t.id, t.id.split(".")[0]];
-        let found = false;
-        for (const cand of candidates) {
-          const r = await fetch(`${API_BASE}/contents/datasets/attack_techniques/${cand}`, { headers });
-          if (r.ok) { found = true; break; }
-        }
-        setCoverage(prev => ({...prev, [t.id]: found ? "matched" : "unmatched"}));
-      } catch {
-        setCoverage(prev => ({...prev, [t.id]: "unmatched"}));
-      }
-    }
-  };
-
-  const search = async () => {
-    if (!query.trim()) return;
-    if (!gtiToken) { setError("A GTI API key is required. Click 'add key' above to set your VT Enterprise key."); return; }
-    setLoading(true); setError(null); setResult(null); setCoverage({}); setSelectedTtps(new Set());
-
-    try {
-      // Live GTI API call
-      const endpoint = searchType === "actor"
-        ? `${GTI_BASE}/threat_actors?filter=name%3A${encodeURIComponent(query)}&limit=5`
-        : `${GTI_BASE}/collections?filter=name%3A${encodeURIComponent(query)}&limit=5`;
-      const res = await fetch(endpoint, {
-        headers: { "x-apikey": gtiToken, "Accept": "application/json" }
-      });
-      if (!res.ok) throw new Error(`GTI API ${res.status}: ${res.statusText}`);
-      const data = await res.json();
-      const items = data.data || [];
-      if (items.length === 0) throw new Error(`No ${searchType}s found matching "${query}"`);
-
-      // Take first result, fetch its attack_technique relationships
-      const item = items[0];
-      const relRes = await fetch(
-        `${GTI_BASE}/${searchType === "actor" ? "threat_actors" : "collections"}/${item.id}/relationships/attack_techniques?limit=40`,
-        { headers: { "x-apikey": gtiToken, "Accept": "application/json" } }
-      );
-      const relData = relRes.ok ? await relRes.json() : { data: [] };
-      const ttps = (relData.data || []).map(t => ({
-        id: t.id,
-        tactic: getTactic(t.id),
-        confidence: t.attributes?.confidence || 80,
-        source: "GTI",
-      }));
-
-      const built = {
-        id: item.id,
-        type: searchType,
-        name: item.attributes?.name || item.id,
-        aliases: item.attributes?.aliases || [],
-        nation: item.attributes?.country || "Unknown",
-        color: "#22d3ee",
-        ttps,
-        description: item.attributes?.description || "",
-        gtiUrl: `https://www.virustotal.com/gui/collection/${item.id}`,
-        campaigns: 0, iocs: 0,
-        firstSeen: item.attributes?.first_submission_date || "",
-        lastSeen: item.attributes?.last_modification_date || "",
-      };
-      setResult(built);
-      setSelectedTtps(new Set(ttps.map(t => t.id)));
-      await checkCoverage(ttps);
-    } catch(e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const buildFlow = async () => {
-    if (!result || selectedTtps.size === 0) return;
-    setBuildingFlow(true);
-
-    // Sort selected TTPs by kill-chain phase order
-    const sorted = result.ttps
-      .filter(t => selectedTtps.has(t.id))
-      .sort((a, b) => PHASE_ORDER.indexOf(a.tactic) - PHASE_ORDER.indexOf(b.tactic));
-
-    const newSteps = [];
-    for (const ttp of sorted) {
-      // Only add TTPs with coverage
-      if (coverage[ttp.id] !== "matched") continue;
-      try {
-        const candidates = [ttp.id, ttp.id.split(".")[0]];
-        let ds = null;
-        for (const cand of candidates) {
-          let cached = cache.yamls[cand];
-          if (!cached) cached = await fetchYamlsForTechnique(cand, ghToken);
-          if (cached && cached.length > 0) { ds = cached[0]; break; }
-        }
-        if (ds && !newSteps.find(s => s.id === ds.id)) newSteps.push(ds);
-      } catch {}
-    }
-
-    setFlowSteps(newSteps);
-    setBuildingFlow(false);
-  };
-
-  const toggleTtp = (id) => setSelectedTtps(prev => {
-    const n = new Set(prev);
-    n.has(id) ? n.delete(id) : n.add(id);
-    return n;
-  });
-
-  const selectAll   = (ids) => setSelectedTtps(prev => new Set([...prev, ...ids]));
-  const deselectAll = (ids) => setSelectedTtps(prev => { const n=new Set(prev); ids.forEach(id=>n.delete(id)); return n; });
-
-  // Group TTPs by tactic for display
-  const groupedTtps = {};
-  if (result) {
-    result.ttps.forEach(t => {
-      if (tacticFilter !== "all" && t.tactic !== tacticFilter) return;
-      if (!groupedTtps[t.tactic]) groupedTtps[t.tactic] = [];
-      groupedTtps[t.tactic].push(t);
-    });
-    // Sort groups by kill-chain phase
-    Object.keys(groupedTtps).forEach(tac =>
-      groupedTtps[tac].sort((a,b) => a.id.localeCompare(b.id))
-    );
-  }
-
-  const matchedCount   = result ? result.ttps.filter(t => coverage[t.id] === "matched").length : 0;
-  const unmatchedCount = result ? result.ttps.filter(t => coverage[t.id] === "unmatched").length : 0;
-  const loadingCount   = result ? result.ttps.filter(t => coverage[t.id] === "loading" || coverage[t.id] === "unknown").length : 0;
-  const selectedMatchedCount = result ? result.ttps.filter(t => selectedTtps.has(t.id) && coverage[t.id] === "matched").length : 0;
-
-  const NATION_COLORS = { CN:"#ef4444", RU:"#f97316", KP:"#a855f7", IR:"#ec4899", RaaS:"#dc2626", EN:"#06b6d4", Cybercrime:"#64748b", Unknown:"#1e3a5f" };
-
-  return (
-    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-
-      {/* API key setup */}
-      <Card style={{ padding:"12px 16px" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontSize:16 }}>🔑</span>
-            <div>
-              <div style={{...sans, fontSize:12, fontWeight:600, color:"#c8d8f0" }}>Google Threat Intelligence API</div>
-              <div style={{...mono, fontSize:9, color:"#3d5a7a" }}>
-                {gtiToken ? "VT Enterprise key active — live GTI search enabled" : "Add your VT Enterprise API key to enable threat actor search"}
-              </div>
-            </div>
-          </div>
-          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            {gtiToken
-              ? <Pill label="live GTI ✓" color="#10b981" sm/>
-              : <Pill label="key required" color="#ef4444" sm/>}
-            <Btn variant="ghost" sm onClick={()=>setShowToken(v=>!v)}>
-              {showToken ? "cancel" : gtiToken ? "update key" : "add key"}
-            </Btn>
-          </div>
-        </div>
-        {showToken && (
-          <div style={{ marginTop:12, display:"flex", gap:8 }}>
-            <input value={tokenInput} onChange={e=>setTokenInput(e.target.value)}
-              type="password" placeholder="VT Enterprise API key (64 hex chars)"
-              style={{ flex:1, background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
-                padding:"7px 12px", color:"#c8d8f0", ...mono, fontSize:11, outline:"none" }}/>
-            <Btn onClick={()=>{setGtiToken(tokenInput);setShowToken(false);}}>save</Btn>
-          </div>
-        )}
-        {!gtiToken && (
-          <div style={{ marginTop:10, padding:"8px 12px", background:"#1a0808",
-            border:"1px solid #ef444420", borderRadius:6,
-            ...mono, fontSize:9, color:"#ef4444" }}>
-            ⓘ GTI API key required — get yours at virustotal.com/gui/my-apikey (VT Enterprise / GTI subscription needed)
-          </div>
-        )}
-      </Card>
-
-      {/* Search */}
-      <Card>
-        <SectionLabel>SEARCH THREAT ACTORS &amp; CAMPAIGNS</SectionLabel>
-        <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-          <div style={{ display:"flex", borderRadius:6, overflow:"hidden", border:"1px solid #0c1e38", flexShrink:0 }}>
-            {["actor","campaign"].map(t=>(
-              <button key={t} onClick={()=>setSearchType(t)}
-                style={{ padding:"8px 16px", background:searchType===t?"#091828":"#030a17",
-                  border:"none", color:searchType===t?"#22d3ee":"#3d5a7a",
-                  ...mono, fontSize:10, cursor:"pointer", borderRight:t==="actor"?"1px solid #0c1e38":"none" }}>
-                {t==="actor" ? "🧑‍💻 Actor" : "🎯 Campaign"}
-              </button>
-            ))}
-          </div>
-          <input value={query} onChange={e=>setQuery(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&search()}
-            placeholder={searchType==="actor" ? "Volt Typhoon, APT29, LockBit, Scattered Spider…" : "campaign name or ID…"}
-            style={{ flex:1, background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
-              padding:"8px 14px", color:"#c8d8f0", ...sans, fontSize:13, outline:"none" }}/>
-          <Btn onClick={search} disabled={loading||!query.trim()}>
-            {loading ? "searching…" : "→ search"}
-          </Btn>
-        </div>
-
-        {/* Quick-pick actors */}
-        <div>
-          <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:8, letterSpacing:"0.1em" }}>QUICK SELECT</div>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
-            {KNOWN_ACTORS.map(a=>(
-              <button key={a.name} onClick={()=>{setQuery(a.name);setSearchType("actor");}}
-                style={{ padding:"4px 10px", borderRadius:4, cursor:"pointer",
-                  background: query===a.name?"#091828":"transparent",
-                  border:`1px solid ${query===a.name?a.color+"60":"#0c1e38"}`,
-                  color: query===a.name?a.color:"#3d5a7a",
-                  ...mono, fontSize:9, display:"flex", alignItems:"center", gap:5 }}>
-                <span style={{ background:NATION_COLORS[a.nation]||"#1e3a5f", color:"#fff",
-                  padding:"1px 4px", borderRadius:2, fontSize:8 }}>{a.nation}</span>
-                {a.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      </Card>
-
-      {/* Error */}
-      {error && (
-        <div style={{ padding:"12px 16px", background:"#1a0808", border:"1px solid #ef444430",
-          borderRadius:8, ...mono, fontSize:11, color:"#ef4444", animation:"slideUp .2s" }}>
-          ⚠ {error}
-        </div>
-      )}
-
-      {/* Loading */}
-      {loading && (
-        <Card>
-          <div style={{ display:"flex", alignItems:"center", gap:12, padding:"8px 0",
-            ...mono, fontSize:11, color:"#3d5a7a" }}>
-            <Spinner/> Querying GTI for "{query}"…
-          </div>
-        </Card>
-      )}
-
-      {/* Result */}
-      {result && !loading && (
-        <div style={{ display:"flex", flexDirection:"column", gap:14, animation:"slideUp .25s" }}>
-
-          {/* Actor / Campaign header */}
-          <Card glow style={{ padding:"18px 20px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:16 }}>
-              <div style={{ flex:1 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
-                  <div style={{ width:10, height:10, borderRadius:"50%", background:result.color,
-                    boxShadow:`0 0 12px ${result.color}` }}/>
-                  <span style={{...sans, fontSize:22, fontWeight:800, color:"#e2f0ff" }}>{result.name}</span>
-                  <Pill label={result.type === "threat-actor" ? "Threat Actor" : "Campaign"} color="#22d3ee" sm/>
-                  {result.nation && result.nation !== "Unknown" && (
-                    <span style={{ background:NATION_COLORS[result.nation]||"#1e3a5f",
-                      color:"#fff", padding:"2px 8px", borderRadius:4, ...mono, fontSize:10, fontWeight:700 }}>
-                      {result.nation}
-                    </span>
-                  )}
-                </div>
-                {result.aliases?.length > 0 && (
-                  <div style={{...mono, fontSize:10, color:"#3d5a7a", marginBottom:10 }}>
-                    Also known as: {result.aliases.join(" · ")}
-                  </div>
-                )}
-                <div style={{...sans, fontSize:12, color:"#4a6a8a", lineHeight:1.6, maxWidth:700 }}>
-                  {result.description}
-                </div>
-              </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:8, flexShrink:0, minWidth:140 }}>
-                {[
-                  ["TTPs",        result.ttps.length, "#22d3ee"],
-                  ["Matched",     matchedCount,        "#10b981"],
-                  ["Unmatched",   unmatchedCount,      "#ef4444"],
-                  ["Checking",    loadingCount,        "#f59e0b"],
-                ].map(([l,v,c])=>(
-                  <div key={l} style={{ display:"flex", justifyContent:"space-between",
-                    padding:"4px 10px", background:"#030a17", borderRadius:5, border:"1px solid #0c1e38" }}>
-                    <span style={{...mono, fontSize:9, color:"#1e3a5f" }}>{l}</span>
-                    <span style={{...mono, fontSize:12, fontWeight:700, color:c }}>{v}</span>
-                  </div>
-                ))}
-                <a href={result.gtiUrl} target="_blank" rel="noopener noreferrer"
-                  style={{ textAlign:"center", padding:"6px 10px", background:"#030a17",
-                    border:"1px solid #22d3ee30", borderRadius:5, color:"#22d3ee",
-                    ...mono, fontSize:9, textDecoration:"none" }}>
-                  view in GTI →
-                </a>
-              </div>
-            </div>
-          </Card>
-
-          {/* Coverage summary bar */}
-          <Card style={{ padding:"12px 16px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-              <SectionLabel>ATTACK_DATA COVERAGE</SectionLabel>
-              <div style={{ display:"flex", gap:6 }}>
-                {["all",...new Set(result.ttps.map(t=>t.tactic))].filter(t=>t!=="Unknown").map(t=>(
-                  <button key={t} onClick={()=>setTacticFilter(t)}
-                    style={{ padding:"3px 8px", borderRadius:3, cursor:"pointer",
-                      background:tacticFilter===t?`${TACTIC_COLORS[t]||"#22d3ee"}15`:"transparent",
-                      border:`1px solid ${tacticFilter===t?TACTIC_COLORS[t]||"#22d3ee":"#0c1e38"}`,
-                      color:tacticFilter===t?TACTIC_COLORS[t]||"#22d3ee":"#3d5a7a",
-                      ...mono, fontSize:9, cursor:"pointer" }}>{t==="all"?"all":t.split(" ").map(w=>w[0]).join("")}</button>
-                ))}
-              </div>
-            </div>
-            <div style={{ display:"flex", height:6, borderRadius:3, overflow:"hidden", gap:1, marginBottom:10 }}>
-              {result.ttps.map(t=>(
-                <div key={t.id} title={`${t.id} — ${coverage[t.id]||"unknown"}`}
-                  style={{ flex:1, background:
-                    coverage[t.id]==="matched"?"#10b981":
-                    coverage[t.id]==="unmatched"?"#ef444450":
-                    coverage[t.id]==="loading"?"#f59e0b":
-                    "#0c1e38", transition:"background .3s" }}/>
-              ))}
-            </div>
-            <div style={{ display:"flex", gap:14 }}>
-              {[["matched","#10b981","✓ have attack_data"],["unmatched","#ef4444","✗ no coverage"],["loading","#f59e0b","⟳ checking"]].map(([s,c,l])=>(
-                <div key={s} style={{ display:"flex", alignItems:"center", gap:5 }}>
-                  <div style={{ width:8, height:8, borderRadius:2, background:c }}/>
-                  <span style={{...mono, fontSize:9, color:"#1e3a5f" }}>{l}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* TTP grid grouped by tactic */}
-          <Card>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-              <SectionLabel>TTPS — {result.ttps.length} TECHNIQUES ({selectedTtps.size} SELECTED)</SectionLabel>
-              <div style={{ display:"flex", gap:6 }}>
-                <Btn variant="ghost" sm onClick={()=>selectAll(result.ttps.filter(t=>coverage[t.id]==="matched").map(t=>t.id))}>
-                  select matched
-                </Btn>
-                <Btn variant="ghost" sm onClick={()=>setSelectedTtps(new Set(result.ttps.map(t=>t.id)))}>
-                  select all
-                </Btn>
-                <Btn variant="secondary" sm onClick={()=>setSelectedTtps(new Set())}>
-                  clear
-                </Btn>
-              </div>
-            </div>
-
-            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-              {PHASE_ORDER.filter(phase => groupedTtps[phase]).map(phase => {
-                const pttps = groupedTtps[phase];
-                const tc = TACTIC_COLORS[phase] || "#1e293b";
-                const phaseIds = pttps.map(t=>t.id);
-                const allSel = phaseIds.every(id=>selectedTtps.has(id));
-                return (
-                  <div key={phase}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:7 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                        <div style={{ width:3, height:14, borderRadius:2, background:tc }}/>
-                        <span style={{...mono, fontSize:10, color:tc, fontWeight:700 }}>{phase.toUpperCase()}</span>
-                        <span style={{...mono, fontSize:9, color:"#1e3a5f" }}>({pttps.length})</span>
-                      </div>
-                      <button onClick={()=> allSel ? deselectAll(phaseIds) : selectAll(phaseIds)}
-                        style={{ background:"transparent", border:"none", color:"#1e3a5f",
-                          ...mono, fontSize:9, cursor:"pointer" }}>
-                        {allSel ? "deselect all" : "select all"}
-                      </button>
-                    </div>
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))", gap:6 }}>
-                      {pttps.map(t => {
-                        const cov = coverage[t.id] || "unknown";
-                        const isSel = selectedTtps.has(t.id);
-                        const covColor = cov==="matched"?"#10b981":cov==="unmatched"?"#ef4444":cov==="loading"?"#f59e0b":"#1e3a5f";
-                        return (
-                          <div key={t.id} onClick={()=>toggleTtp(t.id)}
-                            style={{ padding:"9px 11px", borderRadius:7, cursor:"pointer",
-                              background: isSel?"#091828":"#030a17",
-                              border:`1px solid ${isSel?tc+"50":"#0c1e38"}`,
-                              transition:"all .15s", opacity: cov==="unmatched"?.6:1 }}>
-                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
-                              <span style={{...mono, fontSize:12, color: isSel?"#c8d8f0":"#6a8aaa", fontWeight:isSel?700:400 }}>
-                                {t.id}
-                              </span>
-                              <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                                {isSel && <span style={{ color:tc, fontSize:9 }}>✓</span>}
-                                <div style={{ width:7, height:7, borderRadius:"50%", background:covColor,
-                                  boxShadow: cov==="loading"?"0 0 6px #f59e0b":"none",
-                                  animation: cov==="loading"?"pulse 1s infinite":"none" }}/>
-                              </div>
-                            </div>
-                            <div style={{...sans, fontSize:9, color:"#2a4060", marginBottom:5 }}>
-                              {getTactic(t.id)}
-                            </div>
-                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                              <span style={{...mono, fontSize:8, color:covColor }}>
-                                {cov==="matched"?"✓ has data":cov==="unmatched"?"✗ no data":cov==="loading"?"checking…":"—"}
-                              </span>
-                              <span style={{...mono, fontSize:8, color:"#1e3a5f" }}>
-                                {t.confidence}% conf
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-
-          {/* Build flow CTA */}
-          <Card glow style={{ padding:"18px 20px" }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:16 }}>
-              <div>
-                <div style={{...sans, fontSize:15, fontWeight:700, color:"#e2f0ff", marginBottom:4 }}>
-                  Build Attack Flow from {result.name}
-                </div>
-                <div style={{...sans, fontSize:11, color:"#3d5a7a" }}>
-                  {selectedMatchedCount > 0
-                    ? `${selectedMatchedCount} matched technique${selectedMatchedCount>1?"s":""} selected → will load datasets from splunk/attack_data, sorted by kill-chain phase`
-                    : "Select techniques above (matched ones only will be included in the flow)"}
-                </div>
-                {unmatchedCount > 0 && (
-                  <div style={{...mono, fontSize:10, color:"#f59e0b", marginTop:6 }}>
-                    ⚠ {unmatchedCount} techniques have no attack_data coverage and will be skipped
-                  </div>
-                )}
-              </div>
-              <div style={{ display:"flex", gap:8, flexShrink:0 }}>
-                <Btn variant="secondary" onClick={()=>{
-                  // Export TTP list as JSON
-                  const exp = {
-                    actor: result.name, type: result.type, nation: result.nation,
-                    queried: new Date().toISOString(),
-                    source: "GTI API",
-                    ttps: result.ttps.map(t=>({
-                      id: t.id, tactic: t.tactic, confidence: t.confidence,
-                      attack_data_coverage: coverage[t.id]||"unknown",
-                    })),
-                    coverage_summary: { matched: matchedCount, unmatched: unmatchedCount, total: result.ttps.length }
-                  };
-                  navigator.clipboard?.writeText(JSON.stringify(exp,null,2));
-                }}>copy TTP JSON</Btn>
-                <Btn onClick={buildFlow} disabled={buildingFlow||selectedMatchedCount===0}>
-                  {buildingFlow ? "⟳ loading datasets…" : `⛓ build flow (${selectedMatchedCount} steps)`}
-                </Btn>
-              </div>
-            </div>
-            {flowSteps.length > 0 && (
-              <div style={{ marginTop:12, padding:"8px 12px", background:"#030a17",
-                border:"1px solid #10b98130", borderRadius:6,
-                ...mono, fontSize:10, color:"#10b981" }}>
-                ✓ Attack Flow populated with {flowSteps.length} steps — switch to the Attack Flow tab to review and reorder
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── APP SHELL ────────────────────────────────────────────────────────────────
-
 const TABS = [
-  {id:"threatintel",icon:"🧠", label:"Threat Intel"},
   {id:"flow",     icon:"⛓", label:"Attack Flow"},
   {id:"datasets", icon:"📂", label:"Datasets"},
-  {id:"entities", icon:"🔍", label:"Entities"},
   {id:"tenants",  icon:"🏢", label:"Tenants"},
   {id:"schedule", icon:"⏰", label:"Schedule"},
   {id:"generate", icon:"⚙️", label:"Generate"},
@@ -2647,10 +2084,8 @@ const TABS = [
 ];
 
 const PAGE_META = {
-  threatintel:["Threat Intelligence",  "Search Google Threat Intelligence for threat actors and campaigns — extract MITRE TTPs, check attack_data coverage, and build an attack flow in one click"],
   flow:     ["Attack Flow Builder",   "Chain TTPs into an ordered attack sequence — drag to reorder, apply templates, export as JSON for CTF or workshop use"],
   datasets: ["Live Dataset Browser",  "Enumerate all technique folders from splunk/attack_data via GitHub API — click a technique to load its YAML manifests and add datasets to your flow"],
-  entities: ["Entity Explorer",       "Hostnames, users, processes, IPs, and IOCs present in Attack Range datasets — filtered to your current flow"],
   tenants:  ["SecOps Tenants",        "Configure multi-tenant credentials — each tenant becomes a GitHub Actions matrix job"],
   schedule: ["Schedule & Timing",     "GitHub Actions cron schedule and logstory timestamp delta settings"],
   generate: ["Generate Artifacts",    "Export GitHub Actions workflow (HTTPS pull architecture), Python replay script, and GitHub CLI secret commands"],
@@ -2658,18 +2093,18 @@ const PAGE_META = {
 };
 
 export default function App() {
-  const [tab, setTab]             = useState("threatintel");
+  const [tab, setTab]             = useState("flow");
   const [flowSteps, setFlowSteps] = useState([]);
   const [tenants, setTenants]     = useState([]);
   const [schedule, setSchedule]   = useState("1 0 * * *");
   const [delta, setDelta]         = useState("1d");
   const [ghToken, setGhToken]     = useState("");
-  const [gtiToken, setGtiToken]   = useState("");
+  const [ghRepo, setGhRepo]       = useState("your-org/your-repo");
 
   const badges = {
-    threatintel: 0, flow: flowSteps.length, datasets: 0,
-    entities: 0, tenants: tenants.length,
-    schedule: 0, generate: 0, status: SAMPLE_JOBS.filter(j=>j.status==="failed").length,
+    flow: flowSteps.length, datasets: 0,
+    tenants: tenants.length,
+    schedule: 0, generate: 0, status: 0,
   };
 
   const [title, sub] = PAGE_META[tab];
@@ -2739,14 +2174,12 @@ export default function App() {
           <div style={{...mono, fontSize:11, color:"#1e3a5f" }}>{sub}</div>
         </div>
 
-        {tab==="threatintel"&& <ThreatIntelTab flowSteps={flowSteps} setFlowSteps={setFlowSteps} gtiToken={gtiToken} setGtiToken={setGtiToken} ghToken={ghToken}/>}
         {tab==="flow"     && <AttackFlowBuilder flowSteps={flowSteps} setFlowSteps={setFlowSteps} ghToken={ghToken}/>}
         {tab==="datasets" && <DatasetBrowser flowSteps={flowSteps} setFlowSteps={setFlowSteps} ghToken={ghToken} setGhToken={setGhToken}/>}
-        {tab==="entities" && <EntityExplorer flowSteps={flowSteps}/>}
         {tab==="tenants"  && <TenantManager tenants={tenants} setTenants={setTenants}/>}
         {tab==="schedule" && <ScheduleBuilder schedule={schedule} setSchedule={setSchedule} delta={delta} setDelta={setDelta}/>}
         {tab==="generate" && <GenerateTab tenants={tenants} flowSteps={flowSteps} schedule={schedule} delta={delta}/>}
-        {tab==="status"   && <StatusMonitor tenants={tenants}/>}
+        {tab==="status"   && <StatusMonitor tenants={tenants} ghToken={ghToken} ghRepo={ghRepo} setGhRepo={setGhRepo}/>}
       </div>
 
       {/* footer */}
