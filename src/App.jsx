@@ -2124,7 +2124,7 @@ gh run download <run-id> --repo ${ghRepo}`} maxH="200px"/>
 // Campaigns: GET /api/v3/collections?filter=name:{query}
 // TTPs:      Embedded in relationships → attack_techniques on actor/collection objects
 
-const GTI_BASE = "https://www.virustotal.com/api/v3";
+const GTI_BASE = "https://gti-cors-proxy.twoseven.workers.dev/vt-proxy/api/v3";
 
 // Kill-chain phase ordering for sorting TTPs into a narrative flow
 const PHASE_ORDER = [
