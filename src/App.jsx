@@ -1087,6 +1087,8 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
   const [view, setView] = useState("chain"); // "chain" | "browse"
   const [dragOver, setDragOver] = useState(false);
   const [scenarioTitle, setScenarioTitle] = useState("");
+  const [scenarioSummary, setScenarioSummary] = useState(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const canvasRef = useRef(null);
 
   function addStep(ds) {
