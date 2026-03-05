@@ -140,6 +140,15 @@ const SECOPS_LOG_TYPES = new Set([
 
 const REGIONS = ["US","EU","ASIA","US-EAST1","EU-WEST2","ASIA-SOUTH1"];
 
+const CRON_PRESETS = [
+  {l:"Daily midnight", c:"1 0 * * *"},
+  {l:"Daily 6am UTC",  c:"0 6 * * *"},
+  {l:"Every 6h",       c:"0 */6 * * *"},
+  {l:"Weekly Mon",     c:"1 0 * * 1"},
+  {l:"Twice daily",    c:"1 0,12 * * *"},
+  {l:"Custom",         c:""},
+];
+
 // ─── GITHUB API HELPERS ───────────────────────────────────────────────────────
 // All log files served via media.githubusercontent.com — no git clone needed
 const RAW_BASE = "https://media.githubusercontent.com/media/splunk/attack_data/master";
