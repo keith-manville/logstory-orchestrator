@@ -377,56 +377,70 @@ async function fetchRepoIndex(token) {
   if (cache.index) return cache.index;
   const headers = token ? { Authorization: `token ${token}` } : {};
 
-  // Single API call — truncated=false gives us all paths up to ~100k files
-  const res = await fetch(
-    `${API_BASE}/git/trees/master?recursive=1`,
-    { headers }
-  );
+  const res = await fetch(`${API_BASE}/git/trees/master?recursive=1`, { headers });
   if (!res.ok) throw new Error(`Tree API ${res.status}`);
   const data = await res.json();
 
-  const byTechnique  = {};   // T1078 → Set of log types
-  const byLogType    = {};   // WINDOWS_SYSMON → Set of techniques
-  const tacticLogTypes = {}; // tactic → Set of log types
+  const byTechnique    = {};
+  const byLogType      = {};
+  const tacticLogTypes = {};
 
-  // Paths look like: datasets/attack_techniques/T1078.001/rubeus/T1078.001_Rubeus.yml
-  const ymlRe = /^datasets\/attack_techniques\/(T\d+(?:\.\d+)?)\//;
+  // Direct filename-stem → SecOps log type mappings
+  // Covers the cases ST_MAP can't reach via sourcetype lookup alone
+  const directMap = {
+    crowdstrike: "CS_EDR", falcon: "CS_EDR", cs_edr: "CS_EDR",
+    sysmon: "WINDOWS_SYSMON", winevtlog: "WINEVTLOG", wineventlog: "WINEVTLOG",
+    windows_security: "WINEVTLOG", windows_system: "WINEVTLOG",
+    powershell: "POWERSHELL", linux_sysmon: "LINUX_SYSMON",
+    bro: "BRO_JSON", zeek: "BRO_JSON", suricata: "SURICATA_EVE_JSON",
+    osquery: "OSQUERY", palo_alto: "PAN_FIREWALL", paloalto: "PAN_FIREWALL",
+    pan: "PAN_FIREWALL", office365: "OFFICE_365", o365: "OFFICE_365",
+    aws: "AWS_CLOUDTRAIL", cloudtrail: "AWS_CLOUDTRAIL",
+    gcp: "GCP_CLOUDAUDIT", azure: "AZURE_AD", azuread: "AZURE_AD",
+    okta: "OKTA", github: "GITHUB", gsuite: "GSUITE",
+    cisco: "CISCO_ASA_FIREWALL",
+  };
+
+  function filenameToLt(path) {
+    const raw = path.split("/").pop().replace(/\.(log|json|ndjson|csv|txt|gz)$/i, "").toLowerCase();
+    const stem = raw.replace(/[\-\.\s]+/g, "_");
+
+    // 1. Exact match on full stem
+    if (directMap[stem]) return directMap[stem];
+    // 2. Exact match on SECOPS_LOG_TYPES (file literally named CS_EDR.log)
+    if (SECOPS_LOG_TYPES.has(stem.toUpperCase())) return stem.toUpperCase();
+    // 3. Partial match — does stem contain a known keyword?
+    for (const [k, v] of Object.entries(directMap)) {
+      if (stem.includes(k)) return v;
+    }
+    // 4. Check each _ segment against SECOPS_LOG_TYPES
+    for (const seg of stem.split("_").filter(s => s.length > 2)) {
+      if (SECOPS_LOG_TYPES.has(seg.toUpperCase())) return seg.toUpperCase();
+      if (directMap[seg]) return directMap[seg];
+    }
+    return null;
+  }
+
+  const techRe = /^datasets\/attack_techniques\/(T\d+(?:\.\d+)?)\//;
 
   for (const item of data.tree) {
     if (item.type !== "blob") continue;
-    if (!item.path.endsWith(".yml")) continue;
-    const m = item.path.match(ymlRe);
+    const m = item.path.match(techRe);
     if (!m) continue;
     const tech = m[1];
 
-    // Derive log type from the yaml filename — filenames often contain sourcetype
-    // e.g. T1078.001_windows_security.log → WINDOWS, attack_data_windows_sysmon.yml
-    const fname = item.path.split("/").pop().toLowerCase();
-    let lt = null;
+    const isData = /\.(log|json|ndjson|csv|txt|gz)$/i.test(item.path);
+    const isYml  = item.path.endsWith(".yml");
+    if (!isData && !isYml) continue;
 
-    // Check filename against known log type keywords
-    for (const logType of SECOPS_LOG_TYPES) {
-      const key = logType.toLowerCase().replace(/_/g, "");
-      const fnKey = fname.replace(/[_.-]/g, "");
-      // Try progressively shorter substrings of the log type
-      const parts = logType.toLowerCase().split("_");
-      const firstTwo = parts.slice(0, 2).join("");
-      if (fnKey.includes(firstTwo) || fnKey.includes(key.slice(0, 8))) {
-        lt = logType;
-        break;
-      }
-    }
-
-    if (!lt) continue; // can't map this file to a log type
+    const lt = filenameToLt(item.path);
+    if (!lt) continue;
 
     const tactic = getTactic(tech);
-
     if (!byTechnique[tech]) byTechnique[tech] = new Set();
     byTechnique[tech].add(lt);
-
     if (!byLogType[lt]) byLogType[lt] = new Set();
     byLogType[lt].add(tech);
-
     if (tactic) {
       if (!tacticLogTypes[tactic]) tacticLogTypes[tactic] = new Set();
       tacticLogTypes[tactic].add(lt);
@@ -647,49 +661,39 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
 
-      {/* ── Op metadata + import ───────────────────────────────────────────── */}
+      {/* ── Import techniques ───────────────────────────────────────────────── */}
       <Card>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr auto", gap:12, alignItems:"end" }}>
-          <Inp label="Operation / CTF Name" value={opName} onChange={setOpName} placeholder="Operation Chimera"/>
-          <Inp label="Brief / Scenario Description" value={opDesc} onChange={setOpDesc}
-            placeholder="Blue team detection workshop…"/>
-          <div>
-            <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:6, letterSpacing:"0.08em"}}>
-              IMPORT TECHNIQUES
-            </div>
-            <div style={{ display:"flex", gap:8 }}>
-              <input
-                placeholder="T1078, T1055, T1003…  (comma-separated or paste JSON)"
-                style={{ width:320, background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
-                  padding:"7px 10px", color:"#c8d8f0", ...mono, fontSize:11, outline:"none" }}
-                onKeyDown={e => {
-                  if (e.key !== "Enter") return;
-                  const val = e.target.value.trim();
-                  let techs = [];
-                  try {
-                    const parsed = JSON.parse(val);
-                    // Accept attack-flow JSON export or plain array
-                    if (Array.isArray(parsed)) techs = parsed.map(t => typeof t==="string"?t:t.technique).filter(Boolean);
-                    else if (parsed.steps) techs = parsed.steps.map(s=>s.technique).filter(Boolean);
-                  } catch {
-                    techs = val.split(/[,\s]+/).map(s=>s.trim()).filter(s=>/^T\d/.test(s));
-                  }
-                  if (techs.length > 0) {
-                    techs.forEach(tech => {
-                      const id = `import/${tech}/${Date.now()}`;
-                      addToFlow({ id, technique:tech, name:`${tech}-dataset`, lt:"UNKNOWN",
-                        ltColor:"#475569", mitre:[tech], desc:`Imported technique`,
-                        mediaUrl:`${RAW_BASE}/datasets/attack_techniques/${tech}/atomic_red_team/windows-sysmon.log`,
-                        source:"", sourcetype:"" });
-                    });
-                    e.target.value = "";
-                  }
-                }}
-              />
-            </div>
-            <div style={{...mono, fontSize:9, color:"#1e3a5f", marginTop:4}}>
-              Press Enter · accepts T-IDs, comma list, or ATT&amp;CK Flow JSON export
-            </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          <div style={{...mono, fontSize:9, color:"#3d5a7a", letterSpacing:"0.08em"}}>IMPORT TECHNIQUES</div>
+          <input
+            placeholder="T1078, T1055, T1003…  (comma-separated or paste JSON)"
+            style={{ background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
+              padding:"7px 10px", color:"#c8d8f0", ...mono, fontSize:11, outline:"none" }}
+            onKeyDown={e => {
+              if (e.key !== "Enter") return;
+              const val = e.target.value.trim();
+              let techs = [];
+              try {
+                const parsed = JSON.parse(val);
+                if (Array.isArray(parsed)) techs = parsed.map(t => typeof t==="string"?t:t.technique).filter(Boolean);
+                else if (parsed.steps) techs = parsed.steps.map(s=>s.technique).filter(Boolean);
+              } catch {
+                techs = val.split(/[,\s]+/).map(s=>s.trim()).filter(s=>/^T\d/.test(s));
+              }
+              if (techs.length > 0) {
+                techs.forEach(tech => {
+                  const id = `import/${tech}/${Date.now()}`;
+                  addToFlow({ id, technique:tech, name:`${tech}-dataset`, lt:"UNKNOWN",
+                    ltColor:"#475569", mitre:[tech], desc:`Imported technique`,
+                    mediaUrl:`${RAW_BASE}/datasets/attack_techniques/${tech}/atomic_red_team/windows-sysmon.log`,
+                    source:"", sourcetype:"" });
+                });
+                e.target.value = "";
+              }
+            }}
+          />
+          <div style={{...mono, fontSize:9, color:"#1e3a5f"}}>
+            Press Enter · accepts T-IDs, comma list, or ATT&amp;CK Flow JSON export
           </div>
         </div>
       </Card>
@@ -1601,9 +1605,46 @@ ${flowSteps.map((s,i) => {
 `;
 
   const replayScript = `#!/usr/bin/env python3
-"""scripts/replay_dataset.py — Logstory wrapper for Splunk Attack Data"""
-import argparse, os, shutil, subprocess, sys, tempfile
+"""scripts/replay_dataset.py — Logstory wrapper for Splunk Attack Data
+
+Installs a synthetic usecase directly into the logstory package usecases/
+directory (the only discovery path logstory supports), replays it, then
+cleans up. Works with any logstory version.
+"""
+import argparse, importlib, os, shutil, subprocess, sys
 from pathlib import Path
+
+USECASE_NAME = "SPLUNK_ATTACK_DATA"
+
+def get_logstory_usecases_dir():
+    """Find the usecases/ directory inside the installed logstory package."""
+    import logstory
+    return Path(logstory.__file__).parent / "usecases"
+
+def install_usecase(usecases_dir, log_file, log_type, entities=False):
+    """Copy the log file into the logstory usecases/ folder as a named usecase."""
+    usecase_dir  = usecases_dir / USECASE_NAME
+    subdir       = "ENTITIES" if entities else "EVENTS"
+    ext          = ".ndjson" if entities else ".log"
+    target_dir   = usecase_dir / subdir
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    # logstory discovers files by log type name — filename must match exactly
+    target_file  = target_dir / f"{log_type}{ext}"
+    shutil.copy(log_file, target_file)
+
+    # Required __init__.py so Python treats it as a package
+    init = usecase_dir / "__init__.py"
+    if not init.exists():
+        init.touch()
+
+    return usecase_dir
+
+def uninstall_usecase(usecases_dir):
+    """Remove the synthetic usecase after replay."""
+    usecase_dir = usecases_dir / USECASE_NAME
+    if usecase_dir.exists():
+        shutil.rmtree(usecase_dir)
 
 def main():
     p = argparse.ArgumentParser()
@@ -1621,30 +1662,50 @@ def main():
     if not log_file.exists():
         sys.exit(f"[error] Log file not found: {log_file}")
 
-    with tempfile.TemporaryDirectory() as tmp:
-        usecase_root = Path(tmp) / "SPLUNK_ATTACK_DATA"
-        events_dir   = usecase_root / "EVENTS"
-        events_dir.mkdir(parents=True)
-        shutil.copy(log_file, events_dir / f"{args.log_type}.log")
+    usecases_dir = get_logstory_usecases_dir()
+    print(f"[info] logstory usecases dir: {usecases_dir}")
 
-        if args.entities:
-            from extract_entities import extract_entities
-            ndjson = extract_entities(log_file, args.log_type)
-            if ndjson:
-                entity_dir = usecase_root / "ENTITIES"
-                entity_dir.mkdir(parents=True)
-                (entity_dir / f"{args.log_type}.ndjson").write_text(ndjson)
+    # If entities mode, generate NDJSON from events log first
+    replay_file = log_file
+    if args.entities:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from extract_entities import extract_entities
+        ndjson = extract_entities(log_file, args.log_type)
+        if not ndjson or not ndjson.strip():
+            print(f"[warn] No entities extracted from {log_file.name} — skipping entity pass")
+            sys.exit(0)
+        ndjson_file = log_file.with_suffix(".ndjson")
+        ndjson_file.write_text(ndjson)
+        replay_file = ndjson_file
+        print(f"[info] Extracted {len(ndjson.splitlines())} entity records")
 
-        env = { **os.environ,
+    try:
+        install_usecase(usecases_dir, replay_file, args.log_type, entities=args.entities)
+        print(f"[info] Installed usecase {USECASE_NAME}/{('ENTITIES' if args.entities else 'EVENTS')}/{args.log_type}")
+
+        env = {
+            **os.environ,
             "LOGSTORY_CUSTOMER_ID":      args.customer_id,
             "LOGSTORY_CREDENTIALS_PATH": args.credentials,
             "LOGSTORY_REGION":           args.region,
-            "LOGSTORY_USECASES_BUCKETS": f"file://{tmp}",
         }
-        cmd = ["logstory","replay","usecase","SPLUNK_ATTACK_DATA",
-               f"--timestamp-delta={args.timestamp_delta}"]
-        if args.entities: cmd.append("--entities")
-        sys.exit(subprocess.run(cmd, env=env).returncode)
+        cmd = [
+            "logstory", "replay", "usecase", USECASE_NAME,
+            f"--timestamp-delta={args.timestamp_delta}",
+            f"--credentials-path={args.credentials}",
+            f"--customer-id={args.customer_id}",
+            f"--region={args.region}",
+        ]
+        if args.entities:
+            cmd.append("--entities")
+
+        print(f"[info] Running: {' '.join(cmd)}")
+        result = subprocess.run(cmd, env=env)
+        sys.exit(result.returncode)
+
+    finally:
+        uninstall_usecase(usecases_dir)
+        print(f"[info] Cleaned up usecase {USECASE_NAME}")
 
 if __name__ == "__main__":
     main()
