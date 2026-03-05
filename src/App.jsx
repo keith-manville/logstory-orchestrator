@@ -141,6 +141,7 @@ const SECOPS_LOG_TYPES = new Set([
 const REGIONS = ["US","EU","ASIA","US-EAST1","EU-WEST2","ASIA-SOUTH1"];
 
 const CRON_PRESETS = [
+  {l:"Run once (manual only)", c:"once"},
   {l:"Daily midnight", c:"1 0 * * *"},
   {l:"Daily 6am UTC",  c:"0 6 * * *"},
   {l:"Every 6h",       c:"0 */6 * * *"},
@@ -1079,6 +1080,73 @@ function ConfigTab({ tenants, setTenants, schedule, setSchedule, delta, setDelta
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
 
+      {/* ── Config file import / export ──────────────────────────────────── */}
+      <Card>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
+          <div>
+            <SectionLabel>CONFIG FILE</SectionLabel>
+            <div style={{...mono, fontSize:9, color:"#1e3a5f", marginTop:3}}>
+              Upload a JSON config to populate tenants, schedule, GitHub settings
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            {/* Upload */}
+            <label style={{ cursor:"pointer" }}>
+              <input type="file" accept=".json" style={{ display:"none" }}
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = evt => {
+                    try {
+                      const cfg = JSON.parse(evt.target.result);
+                      if (cfg.tenants)  setTenants(cfg.tenants);
+                      if (cfg.ghRepo)   setGhRepo(cfg.ghRepo);
+                      if (cfg.ghToken)  setGhToken(cfg.ghToken);
+                      if (cfg.schedule) setSchedule(cfg.schedule);
+                      if (cfg.delta)    setDelta(cfg.delta);
+                    } catch { alert("Invalid JSON config file"); }
+                  };
+                  reader.readAsText(file);
+                  e.target.value = "";
+                }}
+              />
+              <div style={{ display:"inline-flex", alignItems:"center", gap:6,
+                padding:"6px 12px", background:"#0c1e38", border:"1px solid #1e3a5f",
+                borderRadius:6, color:"#7eb8f7", ...mono, fontSize:10, cursor:"pointer",
+                transition:"border-color .15s" }}
+                onMouseEnter={e=>e.currentTarget.style.borderColor="#3b82f6"}
+                onMouseLeave={e=>e.currentTarget.style.borderColor="#1e3a5f"}>
+                ⬆ Upload config.json
+              </div>
+            </label>
+            {/* Download current config */}
+            <Btn variant="ghost" sm onClick={() => {
+              const cfg = {
+                tenants,
+                ghRepo,
+                ghToken,
+                schedule,
+                delta,
+                _note: "Logstory Orchestrator config — keep ghToken private"
+              };
+              const blob = new Blob([JSON.stringify(cfg, null, 2)], { type:"application/json" });
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = "logstory-config.json";
+              a.click();
+            }}>⬇ Export config</Btn>
+          </div>
+        </div>
+        {/* Schema hint */}
+        <div style={{ marginTop:10, background:"#030a17", borderRadius:6, padding:"8px 10px",
+          ...mono, fontSize:9, color:"#1e3a5f", lineHeight:1.7 }}>
+          <span style={{ color:"#3d5a7a" }}>Expected shape: </span>
+          {`{ "tenants": [{ "name": "prod", "customerId": "…", "region": "US", "credentials": "{…}" }], `}
+          {`"ghRepo": "owner/repo", "schedule": "1 0 * * *", "delta": "1d" }`}
+        </div>
+      </Card>
+
       {/* ── GitHub / API ─────────────────────────────────────────────────── */}
       <Card>
         <SectionLabel>GITHUB</SectionLabel>
@@ -1132,15 +1200,22 @@ function ConfigTab({ tenants, setTenants, schedule, setSchedule, delta, setDelta
             {preset==="Custom" && (
               <Inp label="Cron Expression" value={schedule} onChange={setSchedule} placeholder="1 0 * * *" mono/>
             )}
-            <div style={{ display:"flex", gap:5, marginTop:8 }}>
-              {["MIN","HOUR","DOM","MON","DOW"].map((lbl,i)=>(
-                <div key={lbl} style={{ flex:1, textAlign:"center", background:"#030a17",
-                  border:"1px solid #0c1e38", borderRadius:6, padding:"8px 4px" }}>
-                  <div style={{...mono, fontSize:7, color:"#1e3a5f", marginBottom:3}}>{lbl}</div>
-                  <div style={{...mono, fontSize:14, color:"#22d3ee", fontWeight:700}}>{parts[i]||"*"}</div>
+            {schedule === "once"
+              ? <div style={{ padding:"10px 12px", background:"#030a17", border:"1px solid #0c1e38",
+                  borderRadius:6, ...mono, fontSize:10, color:"#22d3ee", lineHeight:1.5 }}>
+                  Workflow will only run when triggered manually via<br/>
+                  GitHub Actions → Run workflow, or the Trigger button in the Deploy tab.
                 </div>
-              ))}
-            </div>
+              : <div style={{ display:"flex", gap:5, marginTop:8 }}>
+                  {["MIN","HOUR","DOM","MON","DOW"].map((lbl,i)=>(
+                    <div key={lbl} style={{ flex:1, textAlign:"center", background:"#030a17",
+                      border:"1px solid #0c1e38", borderRadius:6, padding:"8px 4px" }}>
+                      <div style={{...mono, fontSize:7, color:"#1e3a5f", marginBottom:3}}>{lbl}</div>
+                      <div style={{...mono, fontSize:14, color:"#22d3ee", fontWeight:700}}>{parts[i]||"*"}</div>
+                    </div>
+                  ))}
+                </div>
+            }
           </div>
           {/* delta */}
           <div>
@@ -1508,9 +1583,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
 
   const workflow = !ready ? "# Add tenants and build an attack flow first" : `name: Logstory Attack Data Replay
 on:
-  schedule:
-    - cron: '${schedule}'
-  workflow_dispatch:
+${schedule === "once" ? "" : `  schedule:\n    - cron: '${schedule}'\n`}  workflow_dispatch:
     inputs:
       tenant_filter:
         description: 'Single tenant ID to replay (leave empty for all)'
@@ -1553,8 +1626,11 @@ ${tenants.map(t=>{
 
       - name: Write credentials
         run: |
-          echo "\${{ secrets[format('SECOPS_CREDENTIALS_{0}', matrix.tenant_id)] }}" \\
-            > /tmp/secops_creds.json
+          printf '%s' "$SECOPS_CREDS" > /tmp/secops_creds.json
+          python3 -c "import json,sys; json.load(open('/tmp/secops_creds.json'))" || \\
+            { echo 'ERROR: SECOPS_CREDENTIALS secret missing or invalid JSON'; exit 1; }
+        env:
+          SECOPS_CREDS: \${{ secrets[format('SECOPS_CREDENTIALS_{0}', matrix.tenant_id)] }}
 
       - name: Cache downloaded datasets
         uses: actions/cache@v4
@@ -1577,23 +1653,33 @@ ${flowSteps.map((s,i) => {
           fi
 
       - name: "Pass 1 — Events: ${s.name}"
+        env:
+          SECOPS_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
         run: |
+          if [ -z "$SECOPS_CUSTOMER_ID" ]; then
+            echo "ERROR: SECOPS_CUSTOMER_ID_\${{ matrix.tenant_id }} secret is not set"; exit 1
+          fi
           python scripts/replay_dataset.py \\
             --log-file /tmp/attack_data_cache/${fname} \\
             --log-type "${safeLt}" \\
             --credentials /tmp/secops_creds.json \\
-            --customer-id "\${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}" \\
+            --customer-id "$SECOPS_CUSTOMER_ID" \\
             --region "\${{ matrix.region }}"\${{ matrix.ingestion_labels && format(' --labels {0}', matrix.ingestion_labels) || '' }} \\
             --timestamp-delta "${delta}"
 
       - name: "Pass 2 — Entities: ${s.name}"
         if: \${{ github.event.inputs.skip_entities != 'true' }}
+        env:
+          SECOPS_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
         run: |
+          if [ -z "$SECOPS_CUSTOMER_ID" ]; then
+            echo "ERROR: SECOPS_CUSTOMER_ID_\${{ matrix.tenant_id }} secret is not set"; exit 1
+          fi
           python scripts/replay_dataset.py \\
             --log-file /tmp/attack_data_cache/${fname} \\
             --log-type "${safeLt}" \\
             --credentials /tmp/secops_creds.json \\
-            --customer-id "\${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}" \\
+            --customer-id "$SECOPS_CUSTOMER_ID" \\
             --region "\${{ matrix.region }}"\${{ matrix.ingestion_labels && format(' --labels {0}', matrix.ingestion_labels) || '' }} \\
             --timestamp-delta "${delta}" \\
             --entities`;
@@ -1657,6 +1743,24 @@ def main():
     p.add_argument("--labels",          default="")
     p.add_argument("--entities",        action="store_true")
     args = p.parse_args()
+
+    # Validate credentials file is present and valid JSON
+    creds_path = Path(args.credentials)
+    if not creds_path.exists():
+        sys.exit(f"[error] Credentials file not found: {creds_path}")
+    try:
+        import json
+        creds_content = creds_path.read_text().strip()
+        if not creds_content:
+            sys.exit("[error] Credentials file is empty — check that SECOPS_CREDENTIALS secret is set in GitHub")
+        json.loads(creds_content)
+    except json.JSONDecodeError as e:
+        sys.exit(f"[error] Credentials file is not valid JSON: {e}\\n"
+                 f"        Check that SECOPS_CREDENTIALS secret contains the full service account JSON key")
+
+    # Validate customer ID
+    if not args.customer_id or not args.customer_id.strip():
+        sys.exit("[error] --customer-id is empty — check that SECOPS_CUSTOMER_ID secret is set in GitHub")
 
     log_file = Path(args.log_file)
     if not log_file.exists():
