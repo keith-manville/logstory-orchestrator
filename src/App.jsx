@@ -446,28 +446,41 @@ async function fetchYamlsForTechnique(technique, token) {
 
 // ─── DATASET BROWSER ──────────────────────────────────────────────────────────
 
-function DatasetBrowser({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
-  const [techniques, setTechniques] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [search, setSearch] = useState("");
+function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
+  // ── Dataset browser state ──────────────────────────────────────────────────
+  const [techniques, setTechniques]   = useState([]);
+  const [loadingFolders, setLoadingFolders] = useState(false);
+  const [folderError, setFolderError] = useState(null);
+  const [search, setSearch]           = useState("");
   const [tacticFilter, setTacticFilter] = useState("all");
-  const [expanded, setExpanded] = useState(null);        // currently expanded technique
-  const [techDatasets, setTechDatasets] = useState({});  // technique → datasets[]
+  const [logTypeFilter, setLogTypeFilter] = useState("all");
+  const [expanded, setExpanded]       = useState(null);
+  const [techDatasets, setTechDatasets] = useState({});
   const [loadingTech, setLoadingTech] = useState(null);
-  const [tokenInput, setTokenInput] = useState(ghToken);
+  const [tokenInput, setTokenInput]   = useState(ghToken);
   const [showTokenForm, setShowTokenForm] = useState(false);
+  const [browserOpen, setBrowserOpen] = useState(false);
 
+  // ── Flow builder state ─────────────────────────────────────────────────────
+  const [opName, setOpName]           = useState("Operation Chimera");
+  const [opDesc, setOpDesc]           = useState("");
+  const [dragIdx, setDragIdx]         = useState(null);
+  const [overIdx, setOverIdx]         = useState(null);
+  const [openStep, setOpenStep]       = useState(null);
+  const [swapStep, setSwapStep]       = useState(null);
+  const [swapVariants, setSwapVariants] = useState({});
+  const [loadingSwap, setLoadingSwap] = useState(null);
+  const [activeTpl, setActiveTpl]     = useState(null);
+  const [loadingTpl, setLoadingTpl]   = useState(null);
+
+  // ── Dataset browser logic ──────────────────────────────────────────────────
   const loadFolders = async (tok) => {
-    setLoading(true); setError(null);
+    setLoadingFolders(true); setFolderError(null);
     try {
       const folders = await fetchTechniqueFolders(tok || ghToken);
       setTechniques(folders);
-    } catch(e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch(e) { setFolderError(e.message); }
+    finally { setLoadingFolders(false); }
   };
 
   useEffect(() => { loadFolders(); }, []);
@@ -484,182 +497,36 @@ function DatasetBrowser({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
     setLoadingTech(null);
   };
 
-  const addToFlow = (ds) => {
-    setFlowSteps(prev => prev.find(s => s.id === ds.id) ? prev : [...prev, ds]);
-  };
+  const addToFlow   = (ds) => setFlowSteps(prev => prev.find(s => s.id === ds.id) ? prev : [...prev, ds]);
+  const isInFlow    = (ds) => flowSteps.some(s => s.id === ds.id);
+  // Build set of techniques that have at least one dataset matching the log type filter
+  const techLogTypes = {};
+  Object.entries(techDatasets).forEach(([tech, ds]) => {
+    techLogTypes[tech] = [...new Set(ds.map(d => d.lt).filter(Boolean))];
+  });
 
-  const isInFlow = (ds) => flowSteps.some(s => s.id === ds.id);
-
-  const tactics = ["all", ...new Set(techniques.map(t => getTactic(t)).filter(t => t !== "Unknown"))].sort();
+  // All known log types across loaded datasets (sorted)
+  const knownLogTypes = ["all", ...Array.from(
+    new Set(Object.values(techDatasets).flat().map(d => d.lt).filter(Boolean))
+  ).sort()];
 
   const filteredTechs = techniques.filter(t => {
     const matchSearch = !search || t.toLowerCase().includes(search.toLowerCase());
     const matchTactic = tacticFilter === "all" || getTactic(t) === tacticFilter;
-    return matchSearch && matchTactic;
+    const matchLogType = logTypeFilter === "all" || (techLogTypes[t]||[]).includes(logTypeFilter);
+    return matchSearch && matchTactic && matchLogType;
   });
 
-  return (
-    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-      {/* token / API setup */}
-      <Card style={{ padding:"12px 16px" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontSize:14 }}>🔑</span>
-            <div>
-              <div style={{...sans, fontSize:12, fontWeight:600, color:"#c8d8f0"}}>GitHub API</div>
-              <div style={{...mono, fontSize:9, color:"#3d5a7a"}}>
-                {ghToken ? "token set — 5,000 req/hr" : "unauthenticated — 60 req/hr (may hit limit)"}
-              </div>
-            </div>
-          </div>
-          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            {ghToken && <Pill label="authenticated ✓" color="#10b981" sm/>}
-            <Btn variant="ghost" sm onClick={()=>setShowTokenForm(v=>!v)}>
-              {showTokenForm ? "cancel" : ghToken ? "update token" : "add token"}
-            </Btn>
-            <Btn variant="secondary" sm onClick={()=>loadFolders()}>↻ reload</Btn>
-          </div>
-        </div>
-        {showTokenForm && (
-          <div style={{ marginTop:12, display:"flex", gap:8 }}>
-            <input value={tokenInput} onChange={e=>setTokenInput(e.target.value)}
-              placeholder="ghp_xxxxxxxxxxxx (read-only public repo token)"
-              type="password"
-              style={{ flex:1, background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
-                padding:"7px 12px", color:"#c8d8f0", ...mono, fontSize:11, outline:"none" }}/>
-            <Btn onClick={()=>{setGhToken(tokenInput);setShowTokenForm(false);cache.folders=null;loadFolders(tokenInput);}}>
-              save & reload
-            </Btn>
-          </div>
-        )}
-      </Card>
+  // Stats for loaded datasets
+  const allLoadedDs = Object.values(techDatasets).flat();
+  const mappedCount = allLoadedDs.filter(d => SECOPS_LOG_TYPES.has(d.lt)).length;
+  const unmappedCount = allLoadedDs.length - mappedCount;
 
-      {/* filters */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-        <Inp label="Search technique ID or keyword" value={search} onChange={setSearch}
-          placeholder="T1003, kerberos, lateral…" mono/>
-        <Sel label="Filter by Tactic" value={tacticFilter} onChange={setTacticFilter}
-          options={["all",...Object.keys(TACTIC_COLORS)]}/>
-      </div>
-
-      <div style={{...mono, fontSize:10, color:"#1e3a5f"}}>
-        {loading ? "loading from GitHub API…" : `${filteredTechs.length} techniques · ${Object.values(techDatasets).flat().length} datasets loaded · ${flowSteps.length} in flow`}
-      </div>
-
-      {error && (
-        <div style={{ padding:"10px 14px", background:"#1a0808", border:"1px solid #ef444430",
-          borderRadius:8, ...mono, fontSize:11, color:"#ef4444" }}>
-          ⚠ {error}
-          {error.includes("403") && <span style={{ color:"#f59e0b" }}> — add a GitHub token above to increase rate limit</span>}
-        </div>
-      )}
-
-      {/* technique list */}
-      <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:560, overflowY:"auto" }}>
-        {loading && Array(8).fill(0).map((_,i) => <SkeletonRow key={i}/>)}
-        {!loading && filteredTechs.map(tech => {
-          const tactic = getTactic(tech);
-          const tc = TACTIC_COLORS[tactic] || "#1e293b";
-          const isExp = expanded === tech;
-          const ds = techDatasets[tech] || [];
-          const inFlowCount = ds.filter(d => isInFlow(d)).length;
-
-          return (
-            <div key={tech}>
-              <div onClick={()=>expandTechnique(tech)}
-                style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 14px",
-                  background: isExp ? "#091828" : "#060f20",
-                  border:`1px solid ${isExp?"#22d3ee25":"#0c1e38"}`,
-                  borderRadius: isExp ? "8px 8px 0 0" : 8,
-                  cursor:"pointer", transition:"all .15s" }}>
-                <div style={{ width:3, height:32, borderRadius:2, background:tc, flexShrink:0 }}/>
-                <div style={{ flex:1 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                    <span style={{...mono, fontSize:13, color:"#c8d8f0", fontWeight:600}}>{tech}</span>
-                    {inFlowCount > 0 && <Pill label={`${inFlowCount} in flow`} color="#22d3ee" sm/>}
-                    {loadingTech === tech && <Spinner size={12}/>}
-                  </div>
-                  <div style={{...sans, fontSize:10, color:"#3d5a7a", marginTop:2}}>
-                    {tactic}
-                    {ds.length > 0 && <span style={{ color:"#1e3a5f" }}> · {ds.length} datasets</span>}
-                  </div>
-                </div>
-                <Pill label={tactic} color={tc} sm dot/>
-                <span style={{ color:"#1e3a5f", fontSize:12 }}>{isExp?"▲":"▼"}</span>
-              </div>
-
-              {isExp && (
-                <div style={{ background:"#040c1a", border:"1px solid #0c1e38",
-                  borderTop:"none", borderRadius:"0 0 8px 8px", padding:"8px" }}>
-                  {loadingTech === tech && (
-                    <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px",
-                      ...mono, fontSize:11, color:"#3d5a7a" }}>
-                      <Spinner/> fetching YAML manifests from GitHub…
-                    </div>
-                  )}
-                  {!loadingTech && ds.length === 0 && (
-                    <div style={{ padding:"12px", ...mono, fontSize:11, color:"#1e3a5f" }}>
-                      No parseable datasets found for {tech}
-                    </div>
-                  )}
-                  {ds.map(d => {
-                    const inF = isInFlow(d);
-                    return (
-                      <div key={d.id}
-                        style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px",
-                          background: inF ? "#081b30" : "transparent",
-                          borderRadius:6, marginBottom:3,
-                          border:`1px solid ${inF?"#22d3ee20":"transparent"}`,
-                          animation:"slideUp .2s" }}>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:2 }}>
-                            <span style={{...mono, fontSize:11, color: inF?"#c8d8f0":"#6a8aaa", fontWeight: inF?600:400}}>
-                              {d.name}
-                            </span>
-                            <Pill label={d.lt} color={d.ltColor} sm/>
-                            {SECOPS_LOG_TYPES.has(d.lt) ? <Pill label="✓ SecOps" color="#10b981" sm/> : <Pill label="⚠ unmapped" color="#f59e0b" sm/>}
-                            {d.source && <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{d.source.split(":").pop()}</span>}
-                          </div>
-                          <div style={{...mono, fontSize:9, color:"#1e3a5f", wordBreak:"break-all"}}>
-                            {d.mediaUrl || d.yamlPath}
-                          </div>
-                        </div>
-                        <Btn variant={inF?"secondary":"ghost"} sm
-                          onClick={()=>inF ? setFlowSteps(p=>p.filter(s=>s.id!==d.id)) : addToFlow(d)}>
-                          {inF ? "✓ in flow" : "+ add"}
-                        </Btn>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── ATTACK FLOW BUILDER ──────────────────────────────────────────────────────
-
-function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
-  const [opName, setOpName] = useState("Operation Chimera");
-  const [opDesc, setOpDesc] = useState("");
-  const [dragIdx, setDragIdx] = useState(null);
-  const [overIdx, setOverIdx] = useState(null);
-  const [openStep, setOpenStep] = useState(null);
-  const [swapStep, setSwapStep] = useState(null);       // step id with swap panel open
-  const [swapVariants, setSwapVariants] = useState({}); // stepId → datasets[]
-  const [loadingSwap, setLoadingSwap] = useState(null); // stepId currently fetching
-  const [activeTpl, setActiveTpl] = useState(null);
-  const [loadingTpl, setLoadingTpl] = useState(null);
-
+  // ── Flow builder logic ─────────────────────────────────────────────────────
   const openSwap = async (s) => {
     if (swapStep === s.id) { setSwapStep(null); return; }
-    setSwapStep(s.id);
-    setOpenStep(null); // close detail panel if open
-    if (swapVariants[s.id]) return; // already loaded
+    setSwapStep(s.id); setOpenStep(null);
+    if (swapVariants[s.id]) return;
     setLoadingSwap(s.id);
     try {
       const candidates = [...new Set([s.technique, s.technique?.split(".")[0]])].filter(Boolean);
@@ -668,7 +535,6 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
         const ds = await fetchYamlsForTechnique(cand, ghToken);
         all = [...all, ...ds];
       }
-      // Deduplicate by id
       const seen = new Set(); const deduped = [];
       all.forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); deduped.push(d); } });
       setSwapVariants(prev => ({...prev, [s.id]: deduped}));
@@ -684,14 +550,13 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
   const moveStep = (from, to) => {
     if (from === to) return;
     setFlowSteps(prev => {
-      const a = [...prev]; const [el] = a.splice(from,1); a.splice(to,0,el); return a;
+      const a = [...prev]; const [el] = a.splice(from, 1); a.splice(to, 0, el); return a;
     });
   };
 
   const applyTemplate = async (tpl) => {
     setActiveTpl(tpl.id); setLoadingTpl(tpl.id);
     setOpName(tpl.name); setOpDesc(tpl.desc);
-    // For each technique in the template, try to load its first dataset
     const newSteps = [];
     for (const tech of tpl.techniques) {
       try {
@@ -702,15 +567,13 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
           if (!newSteps.find(s => s.id === first.id)) newSteps.push(first);
         }
       } catch(e) {
-        // Add placeholder if API fails
         newSteps.push({
-          id: `placeholder/${tech}`,
-          technique: tech, tool:"atomic_red_team",
+          id: `placeholder/${tech}`, technique: tech, tool: "atomic_red_team",
           name: `${tech}-dataset`,
           mediaUrl: `${RAW_BASE}/datasets/attack_techniques/${tech}/atomic_red_team/windows-sysmon.log`,
-          lt:"WINDOWS_SYSMON", ltColor:"#3b82f6",
-          mitre:[tech], desc:`${getTactic(tech)} technique dataset`,
-          source:"XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+          lt: "WINDOWS_SYSMON", ltColor: "#3b82f6", mitre: [tech],
+          desc: `${getTactic(tech)} technique dataset`,
+          source: "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
         });
       }
     }
@@ -731,15 +594,15 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
     steps: flowSteps.map((s,i) => ({
       step: i+1, name: s.name, technique: s.technique,
       mitre: s.mitre, tactic: (s.mitre||[]).map(getTactic),
-      log_type: s.lt,
-      media_url: s.mediaUrl,
+      log_type: s.lt, media_url: s.mediaUrl,
       source: s.source, sourcetype: s.sourcetype,
     }))
   }, null, 2);
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-      {/* templates */}
+
+      {/* ── Templates ───────────────────────────────────────────────────────── */}
       <Card>
         <SectionLabel>FLOW TEMPLATES</SectionLabel>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:8 }}>
@@ -749,9 +612,7 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
                 background: activeTpl===tpl.id ? `${tpl.color}12` : "#030a17",
                 border:`1px solid ${activeTpl===tpl.id ? tpl.color+"45":"#0c1e38"}`,
                 transition:"all .15s", position:"relative" }}>
-              {loadingTpl===tpl.id && (
-                <div style={{ position:"absolute", top:8, right:8 }}><Spinner size={10}/></div>
-              )}
+              {loadingTpl===tpl.id && <div style={{ position:"absolute", top:8, right:8 }}><Spinner size={10}/></div>}
               <div style={{ width:6, height:6, borderRadius:"50%", background:tpl.color, marginBottom:10 }}/>
               <div style={{...sans, fontSize:11, fontWeight:700, color:"#c8d8f0", marginBottom:4 }}>{tpl.name}</div>
               <div style={{...sans, fontSize:10, color:"#2a4060", lineHeight:1.4, marginBottom:8 }}>{tpl.desc}</div>
@@ -761,7 +622,7 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
         </div>
       </Card>
 
-      {/* metadata + coverage */}
+      {/* ── Metadata + Coverage ─────────────────────────────────────────────── */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
         <Card>
           <SectionLabel>OPERATION METADATA</SectionLabel>
@@ -793,167 +654,318 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
         </Card>
       </div>
 
-      {/* flow canvas */}
+      {/* ── Flow Canvas ─────────────────────────────────────────────────────── */}
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <SectionLabel>ATTACK CHAIN — {flowSteps.length} STEPS</SectionLabel>
-          {flowSteps.length > 0 && <Btn variant="secondary" sm onClick={()=>setFlowSteps([])}>clear</Btn>}
+          <div style={{ display:"flex", gap:8 }}>
+            {flowSteps.length > 0 && <Btn variant="secondary" sm onClick={()=>setFlowSteps([])}>clear all</Btn>}
+            <Btn variant="primary" sm onClick={()=>setBrowserOpen(v=>!v)}>
+              {browserOpen ? "▲ close browser" : "+ add step"}
+            </Btn>
+          </div>
         </div>
 
-        {flowSteps.length === 0
-          ? <div style={{ padding:"40px 0", textAlign:"center", ...sans, fontSize:12, color:"#162035" }}>
-              Apply a template above, or browse the Datasets tab and add techniques to the flow
-            </div>
-          : <div style={{ display:"flex", flexDirection:"column", gap:0 }}>
-              {flowSteps.map((s,i) => {
-                const tc = TACTIC_COLORS[getTactic(s.mitre?.[0]||s.technique)] || "#1e293b";
-                const isOpen = openStep === s.id;
-                const isSwap = swapStep === s.id;
-                const variants = swapVariants[s.id] || [];
-                return (
-                  <div key={s.id}>
-                    <div draggable
-                      onDragStart={()=>setDragIdx(i)}
-                      onDragOver={e=>{e.preventDefault();setOverIdx(i);}}
-                      onDrop={()=>{moveStep(dragIdx,i);setDragIdx(null);setOverIdx(null);}}
-                      onDragEnd={()=>{setDragIdx(null);setOverIdx(null);}}
-                      style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 12px",
-                        background: overIdx===i?"#091828": isSwap?"#091828":"#040c1a",
-                        border:`1px solid ${overIdx===i?"#22d3ee35":isSwap?"#f59e0b35":"#0c1e38"}`,
-                        borderRadius: isSwap||isOpen ? "8px 8px 0 0" : 8,
-                        cursor:"grab", opacity:dragIdx===i?.35:1,
-                        animation:"slideUp .2s" }}>
-                      {/* step number */}
-                      <div style={{ width:28, height:28, borderRadius:"50%", flexShrink:0,
-                        background:`${tc}18`, border:`2px solid ${tc}55`,
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        ...mono, fontSize:11, fontWeight:700, color:tc }}>{i+1}</div>
-                      <div style={{ width:3, height:36, borderRadius:2, background:tc, flexShrink:0 }}/>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:3 }}>
-                          <span style={{...mono, fontSize:12, color:"#c8d8f0", fontWeight:600 }}>{s.name}</span>
-                          <Pill label={s.technique} color="#f59e0b" sm/>
-                          <Pill label={s.lt} color={s.ltColor||"#475569"} sm/>
-                          {s.tool && <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{s.tool}</span>}
-                        </div>
-                        <div style={{...sans, fontSize:10, color:"#2a4060" }}>{s.desc?.slice(0,80)}{s.desc?.length>80?"…":""}</div>
+        {flowSteps.length === 0 && !browserOpen && (
+          <div style={{ padding:"40px 0", textAlign:"center", ...sans, fontSize:12, color:"#162035" }}>
+            Apply a template above, or click <strong style={{color:"#22d3ee"}}>+ add step</strong> to browse datasets
+          </div>
+        )}
+
+        {flowSteps.length > 0 && (
+          <div style={{ display:"flex", flexDirection:"column", gap:0, marginBottom: browserOpen ? 16 : 0 }}>
+            {flowSteps.map((s,i) => {
+              const tc = TACTIC_COLORS[getTactic(s.mitre?.[0]||s.technique)] || "#1e293b";
+              const isOpen = openStep === s.id;
+              const isSwap = swapStep === s.id;
+              const variants = swapVariants[s.id] || [];
+              return (
+                <div key={s.id}>
+                  <div draggable
+                    onDragStart={()=>setDragIdx(i)}
+                    onDragOver={e=>{e.preventDefault();setOverIdx(i);}}
+                    onDrop={()=>{moveStep(dragIdx,i);setDragIdx(null);setOverIdx(null);}}
+                    onDragEnd={()=>{setDragIdx(null);setOverIdx(null);}}
+                    style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 12px",
+                      background: overIdx===i?"#091828": isSwap?"#091828":"#040c1a",
+                      border:`1px solid ${overIdx===i?"#22d3ee35":isSwap?"#f59e0b35":"#0c1e38"}`,
+                      borderRadius: isSwap||isOpen ? "8px 8px 0 0" : 8,
+                      cursor:"grab", opacity:dragIdx===i?.35:1, animation:"slideUp .2s" }}>
+                    <div style={{ width:28, height:28, borderRadius:"50%", flexShrink:0,
+                      background:`${tc}18`, border:`2px solid ${tc}55`,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      ...mono, fontSize:11, fontWeight:700, color:tc }}>{i+1}</div>
+                    <div style={{ width:3, height:36, borderRadius:2, background:tc, flexShrink:0 }}/>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:3 }}>
+                        <span style={{...mono, fontSize:12, color:"#c8d8f0", fontWeight:600 }}>{s.name}</span>
+                        <Pill label={s.technique} color="#f59e0b" sm/>
+                        <Pill label={s.lt} color={s.ltColor||"#475569"} sm/>
+                        {SECOPS_LOG_TYPES.has(s.lt)
+                          ? <Pill label="✓ SecOps" color="#10b981" sm/>
+                          : <Pill label="⚠ unmapped" color="#f59e0b" sm/>}
+                        {s.tool && <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{s.tool}</span>}
                       </div>
-                      <Pill label={getTactic(s.technique)} color={tc} sm dot/>
-                      <div style={{ display:"flex", gap:5, flexShrink:0 }}>
-                        <Btn variant={isSwap?"primary":"ghost"} sm
-                          onClick={e=>{e.stopPropagation();openSwap(s);}}>
-                          {isSwap ? "▲ variants" : "⇄ swap"}
-                        </Btn>
-                        <Btn variant="ghost" sm onClick={()=>{setOpenStep(isOpen?null:s.id);setSwapStep(null);}}>
-                          {isOpen?"▲":"▼"}
-                        </Btn>
-                        <Btn variant="danger" sm onClick={()=>setFlowSteps(p=>p.filter(x=>x.id!==s.id))}>×</Btn>
-                        <span style={{ color:"#0c1e38", fontSize:14, padding:"0 2px", cursor:"grab" }}>⠿</span>
+                      <div style={{...sans, fontSize:10, color:"#2a4060" }}>{s.desc?.slice(0,80)}{s.desc?.length>80?"…":""}</div>
+                    </div>
+                    <Pill label={getTactic(s.technique)} color={tc} sm dot/>
+                    <div style={{ display:"flex", gap:5, flexShrink:0 }}>
+                      <Btn variant={isSwap?"primary":"ghost"} sm onClick={e=>{e.stopPropagation();openSwap(s);}}>
+                        {isSwap ? "▲ variants" : "⇄ swap"}
+                      </Btn>
+                      <Btn variant="ghost" sm onClick={()=>{setOpenStep(isOpen?null:s.id);setSwapStep(null);}}>
+                        {isOpen?"▲":"▼"}
+                      </Btn>
+                      <Btn variant="danger" sm onClick={()=>setFlowSteps(p=>p.filter(x=>x.id!==s.id))}>×</Btn>
+                      <span style={{ color:"#0c1e38", fontSize:14, padding:"0 2px", cursor:"grab" }}>⠿</span>
+                    </div>
+                  </div>
+
+                  {/* swap panel */}
+                  {isSwap && (
+                    <div style={{ background:"#040c1a", border:"1px solid #f59e0b25",
+                      borderTop:"none", borderRadius:"0 0 8px 8px",
+                      padding:"10px 12px", marginBottom:2, animation:"slideUp .15s" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                        <span style={{...mono, fontSize:9, color:"#f59e0b", letterSpacing:"0.1em" }}>
+                          ⇄ SWAP VARIANT — {s.technique}
+                        </span>
+                        {loadingSwap===s.id && <Spinner size={12}/>}
+                        {!loadingSwap && variants.length > 0 && (
+                          <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{variants.length} variant{variants.length!==1?"s":""} available</span>
+                        )}
+                      </div>
+                      {loadingSwap===s.id && <div style={{...mono, fontSize:10, color:"#3d5a7a", padding:"8px 0" }}>fetching variants for {s.technique}…</div>}
+                      {!loadingSwap && variants.length === 0 && <div style={{...mono, fontSize:10, color:"#1e3a5f", padding:"8px 0" }}>No other variants found</div>}
+                      {!loadingSwap && variants.map(v => {
+                        const isCurrent = v.name === s.name && v.tool === s.tool;
+                        return (
+                          <div key={v.id}
+                            style={{ display:"flex", alignItems:"center", gap:10,
+                              padding:"8px 10px", marginBottom:4, borderRadius:6,
+                              background: isCurrent?"#081b14":"#030a17",
+                              border:`1px solid ${isCurrent?"#10b98130":"#0c1e38"}`,
+                              cursor: isCurrent?"default":"pointer", opacity: isCurrent?.7:1, transition:"all .15s" }}
+                            onClick={()=>!isCurrent&&swapVariant(s.id, v)}>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
+                                <span style={{...mono, fontSize:11, color: isCurrent?"#10b981":"#c8d8f0", fontWeight: isCurrent?700:400 }}>{v.name}</span>
+                                {isCurrent && <Pill label="current" color="#10b981" sm/>}
+                                <Pill label={v.lt} color={v.ltColor||"#475569"} sm/>
+                              </div>
+                              <div style={{ display:"flex", gap:6 }}>
+                                <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{v.tool}</span>
+                                {v.source && <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>· {v.source.split(":").pop()}</span>}
+                              </div>
+                            </div>
+                            {!isCurrent && <Btn variant="ghost" sm>use this →</Btn>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* detail panel */}
+                  {isOpen && (
+                    <div style={{ padding:"12px 56px", background:"#030a17",
+                      borderLeft:"3px solid #0c1e38", marginBottom:2, animation:"slideUp .15s" }}>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                        <div>
+                          <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>MEDIA URL (HTTPS PULL)</div>
+                          <div style={{...mono, fontSize:9, color:"#3d5a7a", wordBreak:"break-all", lineHeight:1.5 }}>{s.mediaUrl||"—"}</div>
+                        </div>
+                        <div>
+                          <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>SOURCE / SOURCETYPE</div>
+                          <div style={{...mono, fontSize:9, color:"#3d5a7a" }}>{s.source||"—"}</div>
+                        </div>
+                        <div>
+                          <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>SECOPS LOG TYPE</div>
+                          <Pill label={s.lt} color={s.ltColor||"#475569"} sm/>
+                        </div>
                       </div>
                     </div>
+                  )}
 
-                    {/* ── SWAP PANEL ─────────────────────────────────── */}
-                    {isSwap && (
-                      <div style={{ background:"#040c1a", border:"1px solid #f59e0b25",
-                        borderTop:"none", borderRadius:"0 0 8px 8px",
-                        padding:"10px 12px", marginBottom:2, animation:"slideUp .15s" }}>
-                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-                          <span style={{...mono, fontSize:9, color:"#f59e0b", letterSpacing:"0.1em" }}>
-                            ⇄ SWAP VARIANT — {s.technique}
-                          </span>
-                          {loadingSwap===s.id && <Spinner size={12}/>}
-                          {!loadingSwap && variants.length > 0 && (
-                            <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>
-                              {variants.length} variant{variants.length!==1?"s":""} available
-                            </span>
-                          )}
+                  {i < flowSteps.length-1 && (
+                    <div style={{ display:"flex", justifyContent:"center", padding:"3px 0" }}>
+                      <span style={{ color:"#22d3ee", fontSize:11, animation:"flowBeat 2s infinite" }}>▼</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── Inline Dataset Browser ─────────────────────────────────────────── */}
+        {browserOpen && (
+          <div style={{ borderTop: flowSteps.length > 0 ? "1px solid #0c1e38" : "none",
+            paddingTop: flowSteps.length > 0 ? 16 : 0 }}>
+
+            {/* token bar */}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+              marginBottom:12, padding:"10px 12px", background:"#030a17",
+              borderRadius:8, border:"1px solid #0c1e38" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:13 }}>🔑</span>
+                <div style={{...mono, fontSize:10, color: ghToken ? "#10b981" : "#f59e0b"}}>
+                  {ghToken ? "GitHub token set — 5,000 req/hr" : "No token — 60 req/hr (may hit limit)"}
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:8 }}>
+                {ghToken && <Pill label="authenticated ✓" color="#10b981" sm/>}
+                <Btn variant="ghost" sm onClick={()=>setShowTokenForm(v=>!v)}>
+                  {showTokenForm ? "cancel" : ghToken ? "update token" : "add token"}
+                </Btn>
+                <Btn variant="secondary" sm onClick={()=>loadFolders()}>↻</Btn>
+              </div>
+            </div>
+
+            {showTokenForm && (
+              <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+                <input value={tokenInput} onChange={e=>setTokenInput(e.target.value)}
+                  placeholder="ghp_xxxxxxxxxxxx (read-only public repo token)"
+                  type="password"
+                  style={{ flex:1, background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
+                    padding:"7px 12px", color:"#c8d8f0", ...mono, fontSize:11, outline:"none" }}/>
+                <Btn onClick={()=>{setGhToken(tokenInput);setShowTokenForm(false);cache.folders=null;loadFolders(tokenInput);}}>
+                  save & reload
+                </Btn>
+              </div>
+            )}
+
+            {/* search + filters */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
+              <Inp label="Search technique ID or keyword" value={search} onChange={setSearch}
+                placeholder="T1003, kerberos, lateral…" mono/>
+              <Sel label="Filter by Tactic" value={tacticFilter} onChange={setTacticFilter}
+                options={["all",...Object.keys(TACTIC_COLORS)]}/>
+              <Sel label="Filter by Log Type" value={logTypeFilter} onChange={setLogTypeFilter}
+                options={knownLogTypes}/>
+            </div>
+
+            {/* stats bar */}
+            <div style={{ display:"flex", gap:12, alignItems:"center", marginBottom:10, flexWrap:"wrap" }}>
+              <div style={{...mono, fontSize:10, color:"#1e3a5f"}}>
+                {loadingFolders ? "loading from GitHub API…"
+                  : `${filteredTechs.length} techniques · ${allLoadedDs.length} datasets loaded · ${flowSteps.length} in flow`}
+              </div>
+              {allLoadedDs.length > 0 && (
+                <>
+                  <div style={{ display:"flex", alignItems:"center", gap:5, padding:"2px 8px",
+                    background:"#10b98112", border:"1px solid #10b98128", borderRadius:4 }}>
+                    <span style={{...mono, fontSize:9, color:"#10b981"}}>✓ {mappedCount} SecOps mapped</span>
+                  </div>
+                  {unmappedCount > 0 && (
+                    <div style={{ display:"flex", alignItems:"center", gap:5, padding:"2px 8px",
+                      background:"#f59e0b12", border:"1px solid #f59e0b28", borderRadius:4 }}>
+                      <span style={{...mono, fontSize:9, color:"#f59e0b"}}>⚠ {unmappedCount} unmapped</span>
+                    </div>
+                  )}
+                  {logTypeFilter !== "all" && (
+                    <div style={{ display:"flex", alignItems:"center", gap:5, padding:"2px 8px",
+                      background:"#22d3ee12", border:"1px solid #22d3ee28", borderRadius:4 }}>
+                      <span style={{...mono, fontSize:9, color:"#22d3ee"}}>filter: {logTypeFilter}</span>
+                      <span onClick={()=>setLogTypeFilter("all")}
+                        style={{ cursor:"pointer", color:"#22d3ee", fontSize:11, lineHeight:1 }}>×</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {folderError && (
+              <div style={{ padding:"10px 14px", background:"#1a0808", border:"1px solid #ef444430",
+                borderRadius:8, ...mono, fontSize:11, color:"#ef4444", marginBottom:8 }}>
+                ⚠ {folderError}
+                {folderError.includes("403") && <span style={{ color:"#f59e0b" }}> — add a GitHub token to increase rate limit</span>}
+              </div>
+            )}
+
+            {/* technique list */}
+            <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:480, overflowY:"auto" }}>
+              {loadingFolders && Array(6).fill(0).map((_,i) => <SkeletonRow key={i}/>)}
+              {!loadingFolders && filteredTechs.map(tech => {
+                const tactic = getTactic(tech);
+                const tc = TACTIC_COLORS[tactic] || "#1e293b";
+                const isExp = expanded === tech;
+                const ds = techDatasets[tech] || [];
+                const inFlowCount = ds.filter(d => isInFlow(d)).length;
+                return (
+                  <div key={tech}>
+                    <div onClick={()=>expandTechnique(tech)}
+                      style={{ display:"flex", alignItems:"center", gap:12, padding:"9px 14px",
+                        background: isExp ? "#091828" : "#060f20",
+                        border:`1px solid ${isExp?"#22d3ee25":"#0c1e38"}`,
+                        borderRadius: isExp ? "8px 8px 0 0" : 8,
+                        cursor:"pointer", transition:"all .15s" }}>
+                      <div style={{ width:3, height:28, borderRadius:2, background:tc, flexShrink:0 }}/>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{...mono, fontSize:12, color:"#c8d8f0", fontWeight:600}}>{tech}</span>
+                          {inFlowCount > 0 && <Pill label={`${inFlowCount} in flow`} color="#22d3ee" sm/>}
+                          {loadingTech === tech && <Spinner size={12}/>}
                         </div>
-                        {loadingSwap===s.id && (
-                          <div style={{...mono, fontSize:10, color:"#3d5a7a", padding:"8px 0" }}>
-                            fetching all datasets for {s.technique}…
+                        <div style={{...sans, fontSize:10, color:"#3d5a7a", marginTop:1}}>
+                          {tactic}{ds.length > 0 && <span style={{ color:"#1e3a5f" }}> · {ds.length} datasets</span>}
+                        </div>
+                      </div>
+                      <Pill label={tactic} color={tc} sm dot/>
+                      <span style={{ color:"#1e3a5f", fontSize:11 }}>{isExp?"▲":"▼"}</span>
+                    </div>
+                    {isExp && (
+                      <div style={{ background:"#040c1a", border:"1px solid #0c1e38",
+                        borderTop:"none", borderRadius:"0 0 8px 8px", padding:"8px" }}>
+                        {loadingTech === tech && (
+                          <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px",
+                            ...mono, fontSize:11, color:"#3d5a7a" }}>
+                            <Spinner/> fetching YAML manifests…
                           </div>
                         )}
-                        {!loadingSwap && variants.length === 0 && (
-                          <div style={{...mono, fontSize:10, color:"#1e3a5f", padding:"8px 0" }}>
-                            No other variants found for {s.technique}
+                        {!loadingTech && ds.length === 0 && (
+                          <div style={{ padding:"12px", ...mono, fontSize:11, color:"#1e3a5f" }}>
+                            No parseable datasets found for {tech}
                           </div>
                         )}
-                        {!loadingSwap && variants.map(v => {
-                          const isCurrent = v.name === s.name && v.tool === s.tool;
+                        {ds.map(d => {
+                          const inF = isInFlow(d);
                           return (
-                            <div key={v.id}
-                              style={{ display:"flex", alignItems:"center", gap:10,
-                                padding:"8px 10px", marginBottom:4, borderRadius:6,
-                                background: isCurrent?"#081b14":"#030a17",
-                                border:`1px solid ${isCurrent?"#10b98130":"#0c1e38"}`,
-                                cursor: isCurrent?"default":"pointer",
-                                opacity: isCurrent?.7:1,
-                                transition:"all .15s" }}
-                              onClick={()=>!isCurrent&&swapVariant(s.id, v)}>
+                            <div key={d.id}
+                              style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px",
+                                background: inF ? "#081b30" : "transparent",
+                                borderRadius:6, marginBottom:3,
+                                border:`1px solid ${inF?"#22d3ee20":"transparent"}` }}>
                               <div style={{ flex:1, minWidth:0 }}>
-                                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
-                                  <span style={{...mono, fontSize:11,
-                                    color: isCurrent?"#10b981":"#c8d8f0",
-                                    fontWeight: isCurrent?700:400 }}>
-                                    {v.name}
+                                <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:2 }}>
+                                  <span style={{...mono, fontSize:11, color: inF?"#c8d8f0":"#6a8aaa", fontWeight: inF?600:400}}>
+                                    {d.name}
                                   </span>
-                                  {isCurrent && <Pill label="current" color="#10b981" sm/>}
-                                  <Pill label={v.lt} color={v.ltColor||"#475569"} sm/>
+                                  <Pill label={d.lt} color={d.ltColor} sm/>
+                                  {SECOPS_LOG_TYPES.has(d.lt)
+                                    ? <Pill label="✓ SecOps" color="#10b981" sm/>
+                                    : <Pill label="⚠ unmapped" color="#f59e0b" sm/>}
+                                  {d.source && <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{d.source.split(":").pop()}</span>}
                                 </div>
-                                <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-                                  <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{v.tool}</span>
-                                  {v.source && (
-                                    <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>
-                                      · {v.source.split(":").pop()}
-                                    </span>
-                                  )}
-                                </div>
+                                <div style={{...mono, fontSize:9, color:"#1e3a5f", wordBreak:"break-all"}}>{d.mediaUrl||d.yamlPath}</div>
                               </div>
-                              {!isCurrent && (
-                                <Btn variant="ghost" sm>use this →</Btn>
-                              )}
+                              <Btn variant={inF?"secondary":"ghost"} sm
+                                onClick={()=>inF ? setFlowSteps(p=>p.filter(s=>s.id!==d.id)) : addToFlow(d)}>
+                                {inF ? "✓ added" : "+ add"}
+                              </Btn>
                             </div>
                           );
                         })}
-                      </div>
-                    )}
-
-                    {/* ── DETAIL PANEL ───────────────────────────────── */}
-                    {isOpen && (
-                      <div style={{ padding:"12px 56px", background:"#030a17",
-                        borderLeft:"3px solid #0c1e38", marginBottom:2, animation:"slideUp .15s" }}>
-                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-                          <div>
-                            <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>MEDIA URL (HTTPS PULL)</div>
-                            <div style={{...mono, fontSize:9, color:"#3d5a7a", wordBreak:"break-all", lineHeight:1.5 }}>
-                              {s.mediaUrl || "—"}
-                            </div>
-                          </div>
-                          <div>
-                            <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>SOURCE / SOURCETYPE</div>
-                            <div style={{...mono, fontSize:9, color:"#3d5a7a" }}>{s.source||"—"}</div>
-                          </div>
-                          <div>
-                            <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>SECOPS LOG TYPE</div>
-                            <Pill label={s.lt} color={s.ltColor||"#475569"} sm/>
-                          </div>
-
-                        </div>
-                      </div>
-                    )}
-
-                    {i < flowSteps.length-1 && (
-                      <div style={{ display:"flex", justifyContent:"center", padding:"3px 0" }}>
-                        <span style={{ color:"#22d3ee", fontSize:11, animation:"flowBeat 2s infinite" }}>▼</span>
                       </div>
                     )}
                   </div>
                 );
               })}
             </div>
-        }
+          </div>
+        )}
       </Card>
 
+      {/* ── Flow Export ─────────────────────────────────────────────────────── */}
       {flowSteps.length > 0 && (
         <Card>
           <SectionLabel>FLOW EXPORT JSON</SectionLabel>
@@ -963,6 +975,8 @@ function AttackFlowBuilder({ flowSteps, setFlowSteps, ghToken }) {
     </div>
   );
 }
+
+// ─── ENTITY EXPLORER ──────────────────────────────────────────────────────────
 
 // ─── ENTITY EXPLORER ──────────────────────────────────────────────────────────
 
@@ -2316,7 +2330,6 @@ const KNOWN_ACTORS = [
 
 const TABS = [
   {id:"flow",     icon:"⛓", label:"Attack Flow"},
-  {id:"datasets", icon:"📂", label:"Datasets"},
   {id:"tenants",  icon:"🏢", label:"Tenants"},
   {id:"schedule", icon:"⏰", label:"Schedule"},
   {id:"generate", icon:"⚙️", label:"Generate"},
@@ -2324,8 +2337,7 @@ const TABS = [
 ];
 
 const PAGE_META = {
-  flow:     ["Attack Flow Builder",   "Chain TTPs into an ordered attack sequence — drag to reorder, apply templates, export as JSON for CTF or workshop use"],
-  datasets: ["Live Dataset Browser",  "Enumerate all technique folders from splunk/attack_data via GitHub API — click a technique to load its YAML manifests and add datasets to your flow"],
+  flow:     ["Attack Flow Builder",   "Build an attack sequence from real Splunk datasets — browse techniques inline, drag to reorder, apply templates, export as JSON"],
   tenants:  ["SecOps Tenants",        "Configure multi-tenant credentials — each tenant becomes a GitHub Actions matrix job"],
   schedule: ["Schedule & Timing",     "GitHub Actions cron schedule and logstory timestamp delta settings"],
   generate: ["Generate Artifacts",    "Export GitHub Actions workflow (HTTPS pull architecture), Python replay script, and GitHub CLI secret commands"],
@@ -2414,8 +2426,7 @@ export default function App() {
           <div style={{...mono, fontSize:11, color:"#1e3a5f" }}>{sub}</div>
         </div>
 
-        {tab==="flow"     && <AttackFlowBuilder flowSteps={flowSteps} setFlowSteps={setFlowSteps} ghToken={ghToken}/>}
-        {tab==="datasets" && <DatasetBrowser flowSteps={flowSteps} setFlowSteps={setFlowSteps} ghToken={ghToken} setGhToken={setGhToken}/>}
+        {tab==="flow"     && <FlowBuilder flowSteps={flowSteps} setFlowSteps={setFlowSteps} ghToken={ghToken} setGhToken={setGhToken}/>}
         {tab==="tenants"  && <TenantManager tenants={tenants} setTenants={setTenants}/>}
         {tab==="schedule" && <ScheduleBuilder schedule={schedule} setSchedule={setSchedule} delta={delta} setDelta={setDelta}/>}
         {tab==="generate" && <GenerateTab tenants={tenants} flowSteps={flowSteps} schedule={schedule} delta={delta} ghToken={ghToken} ghRepo={ghRepo} setGhRepo={setGhRepo}/>}
