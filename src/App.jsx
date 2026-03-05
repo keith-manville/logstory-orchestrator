@@ -786,19 +786,48 @@ Respond ONLY with valid JSON, no markdown, no explanation:
   ]
 }`;
 
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
-          }),
+      const MODELS = [
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
+      ];
+
+      const callGemini = async (model) => {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+            }),
+          }
+        );
+        const data = await res.json();
+        if (data.error) {
+          const is429 = data.error.code === 429 || data.error.message?.includes("exhausted");
+          throw Object.assign(new Error(data.error.message), { is429 });
         }
-      );
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
+        return data;
+      };
+
+      let data = null;
+      for (let i = 0; i < MODELS.length; i++) {
+        try {
+          data = await callGemini(MODELS[i]);
+          break;
+        } catch (e) {
+          if (e.is429 && i < MODELS.length - 1) {
+            setError(`Quota hit on ${MODELS[i]}, retrying with ${MODELS[i+1]}…`);
+            await new Promise(r => setTimeout(r, 1500));
+            continue;
+          }
+          throw e;
+        }
+      }
+
+      setError("");
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
       const clean = text.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(clean);
@@ -1143,6 +1172,7 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
       }
     }
     setFlowSteps(newSteps);
+    setView("chain");
   }
 
   // Group chain steps by tactic for color-coded timeline header
@@ -1435,6 +1465,109 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
     if (!ok) { const e = await r.json(); log(`   └─ ${e.message}`); throw new Error(e.message); }
   }
 
+  // ── GitHub Secrets API helpers ─────────────────────────────────────────────
+  // Secrets must be encrypted with the repo's libsodium public key before upload.
+  // We load tweetnacl + tweetnacl-sealedbox lazily from CDN to avoid bundling.
+  async function loadSodium() {
+    if (window._sodiumReady) return window._sodium;
+    // Load libsodium-wrappers — the only browser lib that implements crypto_box_seal
+    // which is what GitHub's secrets API requires
+    await new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.13/dist/modules/libsodium-wrappers.js";
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    await window.sodium.ready;
+    window._sodiumReady = true;
+    window._sodium = window.sodium;
+    return window._sodium;
+  }
+
+  async function getRepoPublicKey(repo, token) {
+    const res = await fetch(`https://api.github.com/repos/${repo}/actions/secrets/public-key`, {
+      headers: { Authorization: `token ${token}`, Accept: "application/vnd.github+json" },
+    });
+    if (!res.ok) throw new Error(`Could not fetch repo public key: ${res.status}`);
+    return res.json(); // { key_id, key }
+  }
+
+  async function encryptSecret(publicKeyB64, value) {
+    const sodium = await loadSodium();
+    const pubKey = sodium.from_base64(publicKeyB64, sodium.base64_variants.ORIGINAL);
+    const msgBytes = sodium.from_string(value);
+    // crypto_box_seal = anonymous box, nonce derived internally — exactly what GitHub requires
+    const encrypted = sodium.crypto_box_seal(msgBytes, pubKey);
+    return sodium.to_base64(encrypted, sodium.base64_variants.ORIGINAL);
+  }
+
+  async function upsertSecret(repo, token, secretName, secretValue, keyId, publicKeyB64) {
+    const encrypted = await encryptSecret(publicKeyB64, secretValue);
+    const res = await fetch(`https://api.github.com/repos/${repo}/actions/secrets/${secretName}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ encrypted_value: encrypted, key_id: keyId }),
+    });
+    if (!res.ok && res.status !== 204) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Secret ${secretName}: ${err.message || res.status}`);
+    }
+  }
+
+  async function pushSecrets(repo, token, log) {
+    log("── secrets ──────────────────────────────────────────────");
+    let pkData;
+    try {
+      pkData = await getRepoPublicKey(repo, token);
+    } catch(e) {
+      log(`  ⚠  Could not fetch repo public key: ${e.message}`);
+      log("     Secrets NOT pushed — set them manually via gh CLI");
+      return;
+    }
+    const { key_id: keyId, key: publicKey } = pkData;
+
+    for (const t of tenants) {
+      const s = t.name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+      let ok = 0, fail = 0;
+
+      // Customer ID
+      if (t.customerId?.trim()) {
+        try {
+          await upsertSecret(repo, token, `SECOPS_CUSTOMER_ID_${s}`, t.customerId.trim(), keyId, publicKey);
+          log(`  ✓  SECOPS_CUSTOMER_ID_${s}`);
+          ok++;
+        } catch(e) { log(`  ✗  SECOPS_CUSTOMER_ID_${s}: ${e.message}`); fail++; }
+      } else {
+        log(`  ⚠  SECOPS_CUSTOMER_ID_${s} — no customerId set, skipped`);
+      }
+
+      // Credentials JSON
+      if (t.credentials?.trim()) {
+        try {
+          JSON.parse(t.credentials); // validate before pushing
+          await upsertSecret(repo, token, `SECOPS_CREDENTIALS_${s}`, t.credentials.trim(), keyId, publicKey);
+          log(`  ✓  SECOPS_CREDENTIALS_${s}`);
+          ok++;
+        } catch(e) {
+          if (e instanceof SyntaxError) {
+            log(`  ✗  SECOPS_CREDENTIALS_${s} — credentials field is not valid JSON, skipped`);
+          } else {
+            log(`  ✗  SECOPS_CREDENTIALS_${s}: ${e.message}`);
+          }
+          fail++;
+        }
+      } else {
+        log(`  ⚠  SECOPS_CREDENTIALS_${s} — no credentials set, skipped`);
+      }
+
+      log(`     ${t.label||t.name}: ${ok} set, ${fail} failed`);
+    }
+  }
+
   async function handlePush() {
     if (!ghToken) { setPushLog(["✗  No GitHub token — add it in Config"]); setPushState("error"); return; }
     if (!repoValid) { setPushLog(["✗  Enter a valid repo (owner/repo)"]); setPushState("error"); return; }
@@ -1452,6 +1585,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
       log(""); log("── README ───────────────────────────────────────────────");
       const readme = `# demo-data\n\nLogstory attack data replay runner.\nGenerated by [logstory-orchestrator](https://keith-manville.github.io/logstory-orchestrator/).\n\n## Required secrets\n\n\`\`\`bash\n${secretCmds}\n\`\`\`\n`;
       await pushFile(pushRepo, "README.md", readme, ghToken, log);
+      log(""); await pushSecrets(pushRepo, ghToken, log);
       log(""); log("✅  All done — trigger a run below.");
       setPushState("done");
       fetchRuns();
@@ -1575,21 +1709,24 @@ ${tenants.map(t=>{
         run: pip install logstory
 
       - name: Write credentials
+        id: write_creds
         env:
           SECOPS_CREDS: \${{ secrets[format('SECOPS_CREDENTIALS_{0}', matrix.tenant_id)] }}
         run: |
           SECRET_NAME="SECOPS_CREDENTIALS_\${{ matrix.tenant_id }}"
           if [ -z "$SECOPS_CREDS" ]; then
-            echo "ERROR: GitHub secret $SECRET_NAME is not set or is empty."
-            echo "       Go to Settings → Secrets and variables → Actions and add it."
-            exit 1
+            echo "::warning::Secret $SECRET_NAME not set — skipping tenant \${{ matrix.tenant_id }}"
+            echo "           Add it: Settings → Secrets → Actions → New secret, name: $SECRET_NAME"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
           fi
           printf '%s' "$SECOPS_CREDS" > /tmp/secops_creds.json
           python3 -c "import json,sys; json.load(open('/tmp/secops_creds.json'))" || \\
-            { echo "ERROR: $SECRET_NAME is set but contains invalid JSON."; \\
-              echo "       Paste the full service account key JSON (not a path or filename)."; exit 1; }
+            { echo "::error::$SECRET_NAME is invalid JSON — paste the full service account key."; exit 1; }
+          echo "skip=false" >> $GITHUB_OUTPUT
 
       - name: Cache downloaded datasets
+        if: steps.write_creds.outputs.skip != 'true'
         uses: actions/cache@v4
         with:
           path: /tmp/attack_data_cache
@@ -1601,6 +1738,7 @@ ${flowSteps.map((s,i) => {
   const safeLt = s.lt || "UNKNOWN";
   return `      # ── Step ${i+1}: ${s.name} [${s.technique}]
       - name: "Download ${s.name}"
+        if: steps.write_creds.outputs.skip != \'true\'
         run: |
           mkdir -p /tmp/attack_data_cache
           CACHE_FILE="/tmp/attack_data_cache/${fname}"
@@ -1610,6 +1748,7 @@ ${flowSteps.map((s,i) => {
           fi
 
       - name: "Pass 1 — Events: ${s.name}"
+        if: steps.write_creds.outputs.skip != \'true\'
         env:
           SECOPS_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
         run: |
