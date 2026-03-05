@@ -367,7 +367,75 @@ function SkeletonRow() {
 // ─── GITHUB API DATASET LOADER ────────────────────────────────────────────────
 
 // In-memory cache so we don't re-fetch on every render
-const cache = { folders: null, yamls: {} };
+const cache = { folders: null, yamls: {}, index: null };
+
+// Fetch the full git tree in one call and build a cross-reference:
+//   repoIndex.byTechnique[T1078] = Set(["WINDOWS_SYSMON","CS_EDR", ...])
+//   repoIndex.byLogType[WINDOWS_SYSMON] = Set(["T1078","T1003", ...])
+//   repoIndex.tacticLogTypes[credential-access] = Set(["WINDOWS_SYSMON", ...])
+async function fetchRepoIndex(token) {
+  if (cache.index) return cache.index;
+  const headers = token ? { Authorization: `token ${token}` } : {};
+
+  // Single API call — truncated=false gives us all paths up to ~100k files
+  const res = await fetch(
+    `${API_BASE}/git/trees/master?recursive=1`,
+    { headers }
+  );
+  if (!res.ok) throw new Error(`Tree API ${res.status}`);
+  const data = await res.json();
+
+  const byTechnique  = {};   // T1078 → Set of log types
+  const byLogType    = {};   // WINDOWS_SYSMON → Set of techniques
+  const tacticLogTypes = {}; // tactic → Set of log types
+
+  // Paths look like: datasets/attack_techniques/T1078.001/rubeus/T1078.001_Rubeus.yml
+  const ymlRe = /^datasets\/attack_techniques\/(T\d+(?:\.\d+)?)\//;
+
+  for (const item of data.tree) {
+    if (item.type !== "blob") continue;
+    if (!item.path.endsWith(".yml")) continue;
+    const m = item.path.match(ymlRe);
+    if (!m) continue;
+    const tech = m[1];
+
+    // Derive log type from the yaml filename — filenames often contain sourcetype
+    // e.g. T1078.001_windows_security.log → WINDOWS, attack_data_windows_sysmon.yml
+    const fname = item.path.split("/").pop().toLowerCase();
+    let lt = null;
+
+    // Check filename against known log type keywords
+    for (const logType of SECOPS_LOG_TYPES) {
+      const key = logType.toLowerCase().replace(/_/g, "");
+      const fnKey = fname.replace(/[_.-]/g, "");
+      // Try progressively shorter substrings of the log type
+      const parts = logType.toLowerCase().split("_");
+      const firstTwo = parts.slice(0, 2).join("");
+      if (fnKey.includes(firstTwo) || fnKey.includes(key.slice(0, 8))) {
+        lt = logType;
+        break;
+      }
+    }
+
+    if (!lt) continue; // can't map this file to a log type
+
+    const tactic = getTactic(tech);
+
+    if (!byTechnique[tech]) byTechnique[tech] = new Set();
+    byTechnique[tech].add(lt);
+
+    if (!byLogType[lt]) byLogType[lt] = new Set();
+    byLogType[lt].add(tech);
+
+    if (tactic) {
+      if (!tacticLogTypes[tactic]) tacticLogTypes[tactic] = new Set();
+      tacticLogTypes[tactic].add(lt);
+    }
+  }
+
+  cache.index = { byTechnique, byLogType, tacticLogTypes };
+  return cache.index;
+}
 
 async function fetchTechniqueFolders(token) {
   if (cache.folders) return cache.folders;
@@ -439,6 +507,7 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
   const [techniques, setTechniques]   = useState([]);
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [folderError, setFolderError] = useState(null);
+  const [repoIndex, setRepoIndex]     = useState(null); // cross-ref: tactic↔logtype↔technique
   const [search, setSearch]           = useState("");
   const [tacticFilter, setTacticFilter] = useState("all");
   const [logTypeFilter, setLogTypeFilter] = useState("all");
@@ -460,9 +529,12 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
   // ── Dataset browser logic ──────────────────────────────────────────────────
   const loadFolders = async (tok) => {
     setLoadingFolders(true); setFolderError(null);
+    const token = tok || ghToken;
     try {
-      const folders = await fetchTechniqueFolders(tok || ghToken);
+      const folders = await fetchTechniqueFolders(token);
       setTechniques(folders);
+      // Fire index fetch in background — doesn't block the folder list
+      fetchRepoIndex(token).then(idx => setRepoIndex(idx)).catch(() => {});
     } catch(e) { setFolderError(e.message); }
     finally { setLoadingFolders(false); }
   };
@@ -483,21 +555,44 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
 
   const addToFlow   = (ds) => setFlowSteps(prev => prev.find(s => s.id === ds.id) ? prev : [...prev, ds]);
   const isInFlow    = (ds) => flowSteps.some(s => s.id === ds.id);
-  // Build set of techniques that have at least one dataset matching the log type filter
-  const techLogTypes = {};
-  Object.entries(techDatasets).forEach(([tech, ds]) => {
-    techLogTypes[tech] = [...new Set(ds.map(d => d.lt).filter(Boolean))];
-  });
 
-  // All known log types across loaded datasets (sorted)
-  const knownLogTypes = ["all", ...Array.from(
-    new Set(Object.values(techDatasets).flat().map(d => d.lt).filter(Boolean))
-  ).sort()];
+  // ── Filter options derived from repoIndex (populated after background fetch) ─
+  // Log types available for the current tactic selection (or all if no tactic)
+  const availableLogTypes = (() => {
+    if (!repoIndex) return ["all", ...Array.from(SECOPS_LOG_TYPES).sort()];
+    if (tacticFilter === "all") {
+      return ["all", ...Array.from(
+        new Set(Object.values(repoIndex.byLogType).flatMap(s => [...s]).length > 0
+          ? Object.keys(repoIndex.byLogType)
+          : SECOPS_LOG_TYPES)
+      ).sort()];
+    }
+    // Only log types that actually have datasets for this tactic
+    const lts = repoIndex.tacticLogTypes[tacticFilter];
+    return ["all", ...(lts ? [...lts].sort() : Array.from(SECOPS_LOG_TYPES).sort())];
+  })();
 
+  // Tactics available for the current log type selection (or all if no log type)
+  const availableTactics = (() => {
+    if (!repoIndex || logTypeFilter === "all") return ["all", ...Object.keys(TACTIC_COLORS)];
+    // Which techniques have this log type?
+    const techs = repoIndex.byLogType[logTypeFilter] || new Set();
+    // Which tactics do those techniques belong to?
+    const tactics = new Set([...techs].map(t => getTactic(t)).filter(Boolean));
+    return ["all", ...Object.keys(TACTIC_COLORS).filter(t => tactics.has(t))];
+  })();
+
+  // Filter techniques using repoIndex for cross-filter, falling back to techDatasets for loaded ones
   const filteredTechs = techniques.filter(t => {
     const matchSearch = !search || t.toLowerCase().includes(search.toLowerCase());
     const matchTactic = tacticFilter === "all" || getTactic(t) === tacticFilter;
-    const matchLogType = logTypeFilter === "all" || (techLogTypes[t]||[]).includes(logTypeFilter);
+    const matchLogType = logTypeFilter === "all" || (() => {
+      // If we have the index, use it
+      if (repoIndex) return (repoIndex.byTechnique[t] || new Set()).has(logTypeFilter);
+      // Fall back to lazily-loaded data
+      if (techDatasets[t]) return techDatasets[t].some(d => d.lt === logTypeFilter);
+      return true; // unloaded, show optimistically
+    })();
     return matchSearch && matchTactic && matchLogType;
   });
 
@@ -807,10 +902,14 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
               <Inp label="Search technique ID or keyword" value={search} onChange={setSearch}
                 placeholder="T1003, kerberos, lateral…" mono/>
-              <Sel label="Filter by Tactic" value={tacticFilter} onChange={setTacticFilter}
-                options={["all",...Object.keys(TACTIC_COLORS)]}/>
-              <Sel label="Filter by Log Type" value={logTypeFilter} onChange={setLogTypeFilter}
-                options={knownLogTypes}/>
+              <Sel
+                label={`Filter by Tactic${logTypeFilter !== "all" ? ` · ${availableTactics.length - 1} match` : ""}`}
+                value={tacticFilter} onChange={v => { setTacticFilter(v); setLogTypeFilter("all"); }}
+                options={availableTactics}/>
+              <Sel
+                label={`Filter by Log Type${repoIndex ? ` · ${availableLogTypes.length - 1} available` : " · indexing…"}`}
+                value={logTypeFilter} onChange={v => { setLogTypeFilter(v); setTacticFilter("all"); }}
+                options={availableLogTypes}/>
             </div>
 
             {/* stats bar */}
