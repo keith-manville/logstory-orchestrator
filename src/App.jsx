@@ -1661,7 +1661,12 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
       return;
     }
     const { key_id: keyId, key: publicKey } = pkData;
-    log(`  key_id: ${keyId}  key[0:20]: ${publicKey.substring(0,20)}…`);
+    const _pkB = Uint8Array.from(atob(publicKey.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
+    log('  key (full): ' + publicKey);
+    log('  key decoded: ' + _pkB.length + ' bytes');
+    // Test encrypt a dummy value to log the output length
+    const _testEnc = await encryptSecret(publicKey, 'test');
+    log('  test encrypt output length: ' + _testEnc.length + ' chars (expected: 92)');
 
     for (const t of tenants) {
       const s = t.name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
