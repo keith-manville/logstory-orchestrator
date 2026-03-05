@@ -1,6 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { blake2b } from "blakejs";
-import nacl from "tweetnacl";
 
 // ─── SOURCETYPE → SECOPS LOG TYPE MAP ────────────────────────────────────────
 // Based on actual YAML sourcetypes seen in splunk/attack_data
@@ -1537,21 +1535,85 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
   // ── GitHub Secrets API helpers ─────────────────────────────────────────────
   // Secrets must be encrypted with the repo's libsodium public key before upload.
   // We load tweetnacl + tweetnacl-sealedbox lazily from CDN to avoid bundling.
-  // GitHub secrets API requires libsodium crypto_box_seal encryption.
-  // Sealed box = X25519 key exchange + XSalsa20-Poly1305 with Blake2b-derived nonce.
-  // We use bundled tweetnacl (X25519 + XSalsa20-Poly1305) + blakejs (Blake2b).
-  function encryptSecret(publicKeyB64, value) {
+  // Inline Blake2b (blakejs MIT, https://github.com/dcposch/blakejs) — no package dep
+  function _blake2b(input, outlen) {
+    outlen = outlen || 64;
+    const IV32 = new Uint32Array([
+      0xf3bcc908,0x6a09e667,0x84caa73b,0xbb67ae85,0xfe94f82b,0x3c6ef372,
+      0x5f1d36f1,0xa54ff53a,0xade682d1,0x510e527f,0x2b3e6c1f,0x9b05688c,
+      0xfb41bd6b,0x1f83d9ab,0x137e2179,0x5be0cd19]);
+    const SIGMA82 = new Uint8Array([0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,
+      28,20,8,16,18,30,26,12,2,24,0,4,22,14,10,6,22,16,24,0,10,4,30,26,20,28,
+      6,12,14,2,18,8,14,18,6,2,26,24,22,28,4,12,10,20,8,0,30,16,18,0,10,14,4,
+      8,20,30,28,2,22,30,12,16,26,6,24,4,24,12,20,14,12,2,16,6,26,10,8,30,28,
+      2,18,24,10,2,30,28,26,8,20,0,14,12,6,18,4,16,22,24,22,28,18,22,6,0,16,
+      24,4,26,14,2,20,8,22,16,0,18,22,6,26,8,2,14,12,6,18,4,16,22,24,28,20,10,
+      30,14,4,16,18,14,26,6,2,30,22,18,28,6,16,12,0,30,8,10,2,24,20,0,2,4,6,8,
+      10,12,14,16,18,20,22,24,26,28,30,28,20,8,16,18,30,26,12,2,24,0,4,22,14,10,6]);
+    const v = new Uint32Array(32), m = new Uint32Array(32);
+    function ADD64AA(a,b){const o=v[a]+v[b];let p=v[a+1]+v[b+1];if(o>=0x100000000)p++;v[a]=o;v[a+1]=p;}
+    function ADD64AC(a,b0,b1){let o=v[a]+b0;if(b0<0)o+=0x100000000;let p=v[a+1]+b1;if(o>=0x100000000)p++;v[a]=o;v[a+1]=p;}
+    function G(a,b,c,d,ix,iy){
+      const x0=m[ix],x1=m[ix+1],y0=m[iy],y1=m[iy+1];
+      ADD64AA(a,b);ADD64AC(a,x0,x1);
+      let r0=v[d]^v[a],r1=v[d+1]^v[a+1];v[d]=r1;v[d+1]=r0;
+      ADD64AA(c,d);
+      r0=v[b]^v[c];r1=v[b+1]^v[c+1];v[b]=(r0>>>24)^(r1<<8);v[b+1]=(r1>>>24)^(r0<<8);
+      ADD64AA(a,b);ADD64AC(a,y0,y1);
+      r0=v[d]^v[a];r1=v[d+1]^v[a+1];v[d]=(r0>>>16)^(r1<<16);v[d+1]=(r1>>>16)^(r0<<16);
+      ADD64AA(c,d);
+      r0=v[b]^v[c];r1=v[b+1]^v[c+1];v[b]=(r1>>>31)^(r0<<1);v[b+1]=(r0>>>31)^(r1<<1);
+    }
+    function compress(ctx,last){
+      for(let i=0;i<16;i++){v[i]=ctx.h[i];v[i+16]=IV32[i];}
+      v[24]^=ctx.t;v[25]^=Math.floor(ctx.t/0x100000000);
+      if(last){v[28]=~v[28];v[29]=~v[29];}
+      for(let i=0;i<32;i++)m[i]=ctx.b[4*i]^(ctx.b[4*i+1]<<8)^(ctx.b[4*i+2]<<16)^(ctx.b[4*i+3]<<24);
+      for(let i=0;i<12;i++){
+        G(0,8,16,24,SIGMA82[i*16],SIGMA82[i*16+1]);G(2,10,18,26,SIGMA82[i*16+2],SIGMA82[i*16+3]);
+        G(4,12,20,28,SIGMA82[i*16+4],SIGMA82[i*16+5]);G(6,14,22,30,SIGMA82[i*16+6],SIGMA82[i*16+7]);
+        G(0,10,20,30,SIGMA82[i*16+8],SIGMA82[i*16+9]);G(2,12,22,24,SIGMA82[i*16+10],SIGMA82[i*16+11]);
+        G(4,14,16,26,SIGMA82[i*16+12],SIGMA82[i*16+13]);G(6,8,18,28,SIGMA82[i*16+14],SIGMA82[i*16+15]);
+      }
+      for(let i=0;i<16;i++)ctx.h[i]^=v[i]^v[i+16];
+    }
+    const pb = new Uint8Array(64); pb[0]=outlen; pb[2]=1; pb[3]=1;
+    const ctx = {b:new Uint8Array(128),h:new Uint32Array(16),t:0,c:0,outlen};
+    for(let i=0;i<16;i++)ctx.h[i]=IV32[i]^(pb[4*i]^(pb[4*i+1]<<8)^(pb[4*i+2]<<16)^(pb[4*i+3]<<24));
+    for(let i=0;i<input.length;i++){if(ctx.c===128){ctx.t+=ctx.c;compress(ctx,false);ctx.c=0;}ctx.b[ctx.c++]=input[i];}
+    ctx.t+=ctx.c; while(ctx.c<128)ctx.b[ctx.c++]=0; compress(ctx,true);
+    const out=new Uint8Array(outlen);
+    for(let i=0;i<outlen;i++)out[i]=ctx.h[i>>2]>>(8*(i&3));
+    return out;
+  }
+
+  // Load tweetnacl from cdnjs at call time (cached after first load, no build dep)
+  async function _loadNacl() {
+    if (window._naclReady) return window.nacl;
+    await new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/tweetnacl/1.0.3/nacl-fast.min.js";
+      s.onload = res;
+      s.onerror = () => rej(new Error("Failed to load tweetnacl from cdnjs"));
+      document.head.appendChild(s);
+    });
+    if (!window.nacl) throw new Error("tweetnacl loaded but window.nacl is undefined");
+    window._naclReady = true;
+    return window.nacl;
+  }
+
+  // GitHub secrets API: sealed box = X25519 + XSalsa20-Poly1305 + Blake2b nonce
+  async function encryptSecret(publicKeyB64, value) {
+    const nacl = await _loadNacl();
     const recipientPk = Uint8Array.from(atob(publicKeyB64), c => c.charCodeAt(0));
     const msgBytes    = new TextEncoder().encode(value);
     const ephemeral   = nacl.box.keyPair();
-    // Nonce = Blake2b(ephemeral_pk || recipient_pk, outlen=24) — matches libsodium exactly
     const nonceInput  = new Uint8Array(64);
     nonceInput.set(ephemeral.publicKey, 0);
     nonceInput.set(recipientPk, 32);
-    const nonce       = blake2b(nonceInput, null, 24);
+    const nonce       = _blake2b(nonceInput, 24);  // Blake2b nonce matches libsodium exactly
     const ciphertext  = nacl.box(msgBytes, nonce, recipientPk, ephemeral.secretKey);
-    if (!ciphertext) throw new Error("Encryption failed — check the public key format");
-    // Wire format: ephemeral_pk(32) || ciphertext
+    if (!ciphertext) throw new Error("Encryption failed — bad public key?");
     const sealed = new Uint8Array(32 + ciphertext.length);
     sealed.set(ephemeral.publicKey, 0);
     sealed.set(ciphertext, 32);
@@ -1569,7 +1631,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
 
 
   async function upsertSecret(repo, token, secretName, secretValue, keyId, publicKeyB64) {
-    const encrypted = encryptSecret(publicKeyB64, secretValue);
+    const encrypted = await encryptSecret(publicKeyB64, secretValue);
     const res = await fetch(`https://api.github.com/repos/${repo}/actions/secrets/${secretName}`, {
       method: "PUT",
       headers: {
