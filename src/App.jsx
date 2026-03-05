@@ -905,11 +905,12 @@ function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setD
                 reader.onload = evt => {
                   try {
                     const cfg = JSON.parse(evt.target.result);
-                    if (cfg.tenants)  setTenants(cfg.tenants);
-                    if (cfg.ghRepo)   setGhRepo(cfg.ghRepo);
-                    if (cfg.ghToken)  setGhToken(cfg.ghToken);
-                    if (cfg.schedule) setSchedule(cfg.schedule);
-                    if (cfg.delta)    setDelta(cfg.delta);
+                    if (cfg.tenants)   setTenants(cfg.tenants);
+                    if (cfg.ghRepo)    setGhRepo(cfg.ghRepo);
+                    if (cfg.ghToken)   setGhToken(cfg.ghToken);
+                    if (cfg.schedule)  setSchedule(cfg.schedule);
+                    if (cfg.delta)     setDelta(cfg.delta);
+                    if (cfg.geminiKey) setGeminiKey(cfg.geminiKey);
                   } catch { alert("Invalid JSON config"); }
                   e.target.value="";
                 };
@@ -924,7 +925,8 @@ function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setD
             </div>
           </label>
           <button onClick={() => {
-            const cfg = { tenants, ghRepo, ghToken, schedule, delta };
+            const cfg = { tenants, ghRepo, ghToken, schedule, delta, geminiKey,
+                _note: "Logstory Orchestrator config — keep ghToken and geminiKey private" };
             const blob = new Blob([JSON.stringify(cfg,null,2)],{type:"application/json"});
             const a = document.createElement("a"); a.href=URL.createObjectURL(blob);
             a.download="logstory-config.json"; a.click();
@@ -1207,13 +1209,96 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
         </div>
 
         {flowSteps.length > 0 && (
-          <button onClick={()=>{ if(confirm("Clear the chain?")) setFlowSteps([]); }}
+          <button onClick={()=>{ if(confirm("Clear the chain?")) { setFlowSteps([]); setScenarioSummary(null); setSummaryOpen(false); } }}
             style={{ ...mono, fontSize:9, padding:"4px 9px", background:"transparent",
               border:"1px solid #1e3a5f40", borderRadius:4, color:"#1e3a5f", cursor:"pointer" }}>
             clear
           </button>
         )}
       </div>
+
+      {/* Scenario summary panel */}
+      {scenarioSummary && summaryOpen && (
+        <div style={{ borderBottom:"1px solid #08172c", flexShrink:0, background:"#020d1a" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+            padding:"8px 20px 6px", borderBottom:"1px solid #040d1c" }}>
+            <div style={{ ...mono, fontSize:9, color:"#22d3ee", letterSpacing:"0.1em" }}>
+              <span style={{color:"#22d3ee55"}}>◈</span> SCENARIO BRIEFING — {scenarioSummary.title}
+            </div>
+            <button onClick={()=>setSummaryOpen(false)}
+              style={{ ...mono, fontSize:8, color:"#1e3a5f", background:"none", border:"none",
+                cursor:"pointer" }}>hide ▲</button>
+          </div>
+          <div style={{ overflowX:"auto", padding:"12px 20px", display:"flex", gap:8 }}>
+            {scenarioSummary.steps.map((s, i) => {
+              const tactic = getTactic(s.technique);
+              const color = tacticColor(s.technique);
+              const matched = flowSteps[i];
+              return (
+                <div key={i} style={{ flexShrink:0, minWidth:190, maxWidth:210,
+                  background:"#030a17", border:`1px solid ${color}30`,
+                  borderRadius:8, padding:"10px 12px" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+                    <span style={{ width:3, height:28, background:color, borderRadius:2, flexShrink:0 }}/>
+                    <div>
+                      <div style={{ ...mono, fontSize:10, color:"#e2f0ff", fontWeight:700 }}>{s.technique}</div>
+                      <div style={{ ...mono, fontSize:7, color, letterSpacing:"0.08em" }}>
+                        {TACTIC_SHORT[tactic]||tactic}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize:10, color:"#7eb8f7", marginBottom:6, lineHeight:1.4 }}>
+                    {s.label}
+                  </div>
+                  {matched && !matched._noDataset ? (
+                    <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                      <span style={{ width:5, height:5, borderRadius:"50%",
+                        background:"#10b981", flexShrink:0 }}/>
+                      <span style={{ ...mono, fontSize:7, color:"#10b981" }}>dataset matched</span>
+                      <span style={{ ...mono, fontSize:7, color: matched.ltColor || "#475569",
+                        background:`${matched.ltColor||"#475569"}15`,
+                        border:`1px solid ${matched.ltColor||"#475569"}30`,
+                        padding:"1px 5px", borderRadius:3, marginLeft:2 }}>{matched.lt}</span>
+                    </div>
+                  ) : (
+                    <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                      <span style={{ width:5, height:5, borderRadius:"50%",
+                        background:"#f59e0b", flexShrink:0 }}/>
+                      <span style={{ ...mono, fontSize:7, color:"#f59e0b" }}>no dataset — manual add</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ padding:"6px 20px 10px", display:"flex", gap:6, flexWrap:"wrap",
+            alignItems:"center" }}>
+            <span style={{ ...mono, fontSize:7, color:"#1e3a5f", marginRight:4 }}>LOG SOURCES:</span>
+            {[...new Set(flowSteps.filter(s=>s.lt&&s.lt!=="UNKNOWN").map(s=>s.lt))].map(lt => {
+              const color = flowSteps.find(s=>s.lt===lt)?.ltColor || "#475569";
+              return (
+                <span key={lt} style={{ ...mono, fontSize:8, color,
+                  background:`${color}15`, border:`1px solid ${color}30`,
+                  padding:"2px 7px", borderRadius:3 }}>{lt}</span>
+              );
+            })}
+            {flowSteps.some(s=>!s.lt||s.lt==="UNKNOWN") && (
+              <span style={{ ...mono, fontSize:7, color:"#f59e0b" }}>
+                + {flowSteps.filter(s=>!s.lt||s.lt==="UNKNOWN").length} without dataset
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      {scenarioSummary && !summaryOpen && (
+        <div style={{ padding:"4px 20px", borderBottom:"1px solid #08172c", flexShrink:0,
+          display:"flex", alignItems:"center", gap:8, background:"#020d1a" }}>
+          <span style={{ ...mono, fontSize:8, color:"#1e3a5f" }}>Scenario briefing hidden</span>
+          <button onClick={()=>setSummaryOpen(true)}
+            style={{ ...mono, fontSize:8, color:"#22d3ee", background:"none", border:"none",
+              cursor:"pointer" }}>show ▼</button>
+        </div>
+      )}
 
       {/* Main content area */}
       <div style={{ flex:1, overflow:"hidden", display:"flex", minHeight:0 }}>
@@ -1488,12 +1573,19 @@ ${tenants.map(t=>{
         run: pip install logstory
 
       - name: Write credentials
-        run: |
-          printf '%s' "$SECOPS_CREDS" > /tmp/secops_creds.json
-          python3 -c "import json,sys; json.load(open('/tmp/secops_creds.json'))" || \\
-            { echo 'ERROR: SECOPS_CREDENTIALS secret missing or invalid JSON'; exit 1; }
         env:
           SECOPS_CREDS: \${{ secrets[format('SECOPS_CREDENTIALS_{0}', matrix.tenant_id)] }}
+        run: |
+          SECRET_NAME="SECOPS_CREDENTIALS_\${{ matrix.tenant_id }}"
+          if [ -z "$SECOPS_CREDS" ]; then
+            echo "ERROR: GitHub secret $SECRET_NAME is not set or is empty."
+            echo "       Go to Settings → Secrets and variables → Actions and add it."
+            exit 1
+          fi
+          printf '%s' "$SECOPS_CREDS" > /tmp/secops_creds.json
+          python3 -c "import json,sys; json.load(open('/tmp/secops_creds.json'))" || \\
+            { echo "ERROR: $SECRET_NAME is set but contains invalid JSON."; \\
+              echo "       Paste the full service account key JSON (not a path or filename)."; exit 1; }
 
       - name: Cache downloaded datasets
         uses: actions/cache@v4
