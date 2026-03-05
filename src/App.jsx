@@ -1267,7 +1267,7 @@ function GenerateTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, set
   const [pushLog, setPushLog] = useState([]);
   const [pushRepo, setPushRepo] = useState(ghRepo || "");
 
-  React.useEffect(() => { if(ghRepo) setPushRepo(ghRepo); }, [ghRepo]);
+  useEffect(() => { if(ghRepo) setPushRepo(ghRepo); }, [ghRepo]);
 
   async function getFileSha(repo, path, token) {
     try {
