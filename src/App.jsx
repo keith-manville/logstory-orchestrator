@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { blake2b } from "blakejs";
+import nacl from "tweetnacl";
 
 // ─── SOURCETYPE → SECOPS LOG TYPE MAP ────────────────────────────────────────
 // Based on actual YAML sourcetypes seen in splunk/attack_data
@@ -1535,39 +1537,24 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
   // ── GitHub Secrets API helpers ─────────────────────────────────────────────
   // Secrets must be encrypted with the repo's libsodium public key before upload.
   // We load tweetnacl + tweetnacl-sealedbox lazily from CDN to avoid bundling.
-  async function loadSodium() {
-    if (window._naclLoaded) return window.nacl;
-    // Load tweetnacl from cdnjs — implements everything we need for sealed box
-    await new Promise((res, rej) => {
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/tweetnacl/1.0.3/nacl-fast.min.js";
-      s.onload = res; s.onerror = () => rej(new Error("Failed to load tweetnacl from cdnjs"));
-      document.head.appendChild(s);
-    });
-    if (!window.nacl) throw new Error("tweetnacl loaded but window.nacl not found");
-    window._naclLoaded = true;
-    return window.nacl;
-  }
-
-  // Sealed box compatible with libsodium crypto_box_seal (what GitHub requires)
-  // Algorithm: ephemeral keypair, nonce = nacl.hash(epk||rpk)[0:24], nacl.box
-  // Compatible with tweetnacl-sealedbox.js and GitHub's secrets API validation
-  async function encryptSecret(publicKeyB64, value) {
-    const nacl = await loadSodium();
+  // GitHub secrets API requires libsodium crypto_box_seal encryption.
+  // Sealed box = X25519 key exchange + XSalsa20-Poly1305 with Blake2b-derived nonce.
+  // We use bundled tweetnacl (X25519 + XSalsa20-Poly1305) + blakejs (Blake2b).
+  function encryptSecret(publicKeyB64, value) {
     const recipientPk = Uint8Array.from(atob(publicKeyB64), c => c.charCodeAt(0));
     const msgBytes    = new TextEncoder().encode(value);
     const ephemeral   = nacl.box.keyPair();
-    // Derive nonce: first 24 bytes of SHA-512(ephemeral_pk || recipient_pk)
-    const nonceInput  = new Uint8Array(ephemeral.publicKey.length + recipientPk.length);
+    // Nonce = Blake2b(ephemeral_pk || recipient_pk, outlen=24) — matches libsodium exactly
+    const nonceInput  = new Uint8Array(64);
     nonceInput.set(ephemeral.publicKey, 0);
-    nonceInput.set(recipientPk, ephemeral.publicKey.length);
-    const nonce       = nacl.hash(nonceInput).slice(0, nacl.box.nonceLength);
+    nonceInput.set(recipientPk, 32);
+    const nonce       = blake2b(nonceInput, null, 24);
     const ciphertext  = nacl.box(msgBytes, nonce, recipientPk, ephemeral.secretKey);
     if (!ciphertext) throw new Error("Encryption failed — check the public key format");
-    // Output: ephemeral_pk(32) || ciphertext (matches sealed box wire format)
-    const sealed = new Uint8Array(ephemeral.publicKey.length + ciphertext.length);
+    // Wire format: ephemeral_pk(32) || ciphertext
+    const sealed = new Uint8Array(32 + ciphertext.length);
     sealed.set(ephemeral.publicKey, 0);
-    sealed.set(ciphertext, ephemeral.publicKey.length);
+    sealed.set(ciphertext, 32);
     return btoa(String.fromCharCode(...sealed));
   }
 
@@ -1582,7 +1569,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
 
 
   async function upsertSecret(repo, token, secretName, secretValue, keyId, publicKeyB64) {
-    const encrypted = await encryptSecret(publicKeyB64, secretValue);
+    const encrypted = encryptSecret(publicKeyB64, secretValue);
     const res = await fetch(`https://api.github.com/repos/${repo}/actions/secrets/${secretName}`, {
       method: "PUT",
       headers: {
