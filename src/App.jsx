@@ -1536,19 +1536,39 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
   // Secrets must be encrypted with the repo's libsodium public key before upload.
   // We load tweetnacl + tweetnacl-sealedbox lazily from CDN to avoid bundling.
   async function loadSodium() {
-    if (window._sodiumReady) return window._sodium;
-    // Load libsodium-wrappers — the only browser lib that implements crypto_box_seal
-    // which is what GitHub's secrets API requires
+    if (window._naclLoaded) return window.nacl;
+    // Load tweetnacl from cdnjs — implements everything we need for sealed box
     await new Promise((res, rej) => {
       const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.13/dist/modules/libsodium-wrappers.js";
-      s.onload = res; s.onerror = rej;
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/tweetnacl/1.0.3/nacl-fast.min.js";
+      s.onload = res; s.onerror = () => rej(new Error("Failed to load tweetnacl from cdnjs"));
       document.head.appendChild(s);
     });
-    await window.sodium.ready;
-    window._sodiumReady = true;
-    window._sodium = window.sodium;
-    return window._sodium;
+    if (!window.nacl) throw new Error("tweetnacl loaded but window.nacl not found");
+    window._naclLoaded = true;
+    return window.nacl;
+  }
+
+  // Sealed box compatible with libsodium crypto_box_seal (what GitHub requires)
+  // Algorithm: ephemeral keypair, nonce = nacl.hash(epk||rpk)[0:24], nacl.box
+  // Compatible with tweetnacl-sealedbox.js and GitHub's secrets API validation
+  async function encryptSecret(publicKeyB64, value) {
+    const nacl = await loadSodium();
+    const recipientPk = Uint8Array.from(atob(publicKeyB64), c => c.charCodeAt(0));
+    const msgBytes    = new TextEncoder().encode(value);
+    const ephemeral   = nacl.box.keyPair();
+    // Derive nonce: first 24 bytes of SHA-512(ephemeral_pk || recipient_pk)
+    const nonceInput  = new Uint8Array(ephemeral.publicKey.length + recipientPk.length);
+    nonceInput.set(ephemeral.publicKey, 0);
+    nonceInput.set(recipientPk, ephemeral.publicKey.length);
+    const nonce       = nacl.hash(nonceInput).slice(0, nacl.box.nonceLength);
+    const ciphertext  = nacl.box(msgBytes, nonce, recipientPk, ephemeral.secretKey);
+    if (!ciphertext) throw new Error("Encryption failed — check the public key format");
+    // Output: ephemeral_pk(32) || ciphertext (matches sealed box wire format)
+    const sealed = new Uint8Array(ephemeral.publicKey.length + ciphertext.length);
+    sealed.set(ephemeral.publicKey, 0);
+    sealed.set(ciphertext, ephemeral.publicKey.length);
+    return btoa(String.fromCharCode(...sealed));
   }
 
   async function getRepoPublicKey(repo, token) {
@@ -1559,14 +1579,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
     return res.json(); // { key_id, key }
   }
 
-  async function encryptSecret(publicKeyB64, value) {
-    const sodium = await loadSodium();
-    const pubKey = sodium.from_base64(publicKeyB64, sodium.base64_variants.ORIGINAL);
-    const msgBytes = sodium.from_string(value);
-    // crypto_box_seal = anonymous box, nonce derived internally — exactly what GitHub requires
-    const encrypted = sodium.crypto_box_seal(msgBytes, pubKey);
-    return sodium.to_base64(encrypted, sodium.base64_variants.ORIGINAL);
-  }
+
 
   async function upsertSecret(repo, token, secretName, secretValue, keyId, publicKeyB64) {
     const encrypted = await encryptSecret(publicKeyB64, secretValue);
