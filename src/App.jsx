@@ -934,12 +934,13 @@ function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setD
                 reader.onload = evt => {
                   try {
                     const cfg = JSON.parse(evt.target.result);
-                    if (cfg.tenants)   setTenants(cfg.tenants);
-                    if (cfg.ghRepo)    setGhRepo(cfg.ghRepo);
-                    if (cfg.ghToken)   setGhToken(cfg.ghToken);
-                    if (cfg.schedule)  setSchedule(cfg.schedule);
-                    if (cfg.delta)     setDelta(cfg.delta);
-                    if (cfg.geminiKey) setGeminiKey(cfg.geminiKey);
+                    if (cfg.tenants)       setTenants(cfg.tenants);
+                    if (cfg.ghRepo)        setGhRepo(cfg.ghRepo);
+                    if (cfg.ghToken)       setGhToken(cfg.ghToken);
+                    if (cfg.schedule)      setSchedule(cfg.schedule);
+                    if (cfg.delta)         setDelta(cfg.delta);
+                    if (cfg.geminiKey)     setGeminiKey(cfg.geminiKey);
+                    if (cfg.entityProfile) setEntityProfile(cfg.entityProfile);
                   } catch { alert("Invalid JSON config"); }
                   e.target.value="";
                 };
@@ -954,7 +955,7 @@ function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setD
             </div>
           </label>
           <button onClick={() => {
-            const cfg = { tenants, ghRepo, ghToken, schedule, delta, geminiKey,
+            const cfg = { tenants, ghRepo, ghToken, schedule, delta, geminiKey, entityProfile,
                 _note: "Logstory Orchestrator config — keep ghToken and geminiKey private" };
             const blob = new Blob([JSON.stringify(cfg,null,2)],{type:"application/json"});
             const a = document.createElement("a"); a.href=URL.createObjectURL(blob);
@@ -1112,12 +1113,13 @@ function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setD
 }
 
 // ── Main kill chain canvas ────────────────────────────────────────────────────
-function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoading, geminiKey }) {
+function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoading, geminiKey, entityProfile, setEntityProfile }) {
   const [view, setView] = useState("chain"); // "chain" | "browse"
   const [dragOver, setDragOver] = useState(false);
   const [scenarioTitle, setScenarioTitle] = useState("");
   const [scenarioSummary, setScenarioSummary] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const canvasRef = useRef(null);
 
   function addStep(ds) {
@@ -1240,6 +1242,17 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
           {flowSteps.length} step{flowSteps.length!==1?"s":""}
         </div>
 
+        <button onClick={()=>setProfileOpen(p=>!p)}
+          style={{ ...mono, fontSize:9, padding:"4px 10px",
+            background: profileOpen ? "#091828" : "transparent",
+            border:`1px solid ${profileOpen ? "#22d3ee35" : "#1e3a5f40"}`,
+            borderRadius:4, color: profileOpen ? "#22d3ee" : "#3d5a7a", cursor:"pointer",
+            display:"flex", alignItems:"center", gap:5 }}>
+          <span>👤</span> Entity Profile
+          {(entityProfile.actorUser||entityProfile.actorHost||entityProfile.actorIp) && (
+            <span style={{ width:5, height:5, borderRadius:"50%", background:"#10b981", flexShrink:0 }}/>
+          )}
+        </button>
         {flowSteps.length > 0 && (
           <button onClick={()=>{ if(confirm("Clear the chain?")) { setFlowSteps([]); setScenarioSummary(null); setSummaryOpen(false); } }}
             style={{ ...mono, fontSize:9, padding:"4px 9px", background:"transparent",
@@ -1332,6 +1345,59 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
         </div>
       )}
 
+      {/* Entity Profile panel */}
+      {profileOpen && (
+        <div style={{ borderBottom:"1px solid #08172c", flexShrink:0, background:"#020d1a",
+          padding:"14px 20px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+            <span style={{ ...mono, fontSize:9, color:"#22d3ee", letterSpacing:"0.1em" }}>
+              <span style={{color:"#22d3ee55"}}>◈</span> ENTITY PROFILE
+            </span>
+            <div style={{ flex:1, height:1, background:"#08172c" }}/>
+            <span style={{ ...mono, fontSize:8, color:"#1e3a5f" }}>
+              Substituted into log files before ingestion — creates a correlated story across all steps
+            </span>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr) auto", gap:10, alignItems:"end" }}>
+            <Inp label="Actor Username" value={entityProfile.actorUser||""} mono
+              onChange={v=>setEntityProfile(p=>({...p,actorUser:v}))} placeholder="jsmith"/>
+            <Inp label="Actor Hostname" value={entityProfile.actorHost||""} mono
+              onChange={v=>setEntityProfile(p=>({...p,actorHost:v}))} placeholder="DESKTOP-CORP01"/>
+            <Inp label="Actor IP" value={entityProfile.actorIp||""} mono
+              onChange={v=>setEntityProfile(p=>({...p,actorIp:v}))} placeholder="10.0.1.42"/>
+            <div/>
+            <Inp label="Target Hostname" value={entityProfile.targetHost||""} mono
+              onChange={v=>setEntityProfile(p=>({...p,targetHost:v}))} placeholder="FS01-PROD"/>
+            <Inp label="Target IP" value={entityProfile.targetIp||""} mono
+              onChange={v=>setEntityProfile(p=>({...p,targetIp:v}))} placeholder="10.0.1.100"/>
+            <Inp label="Domain" value={entityProfile.domain||""} mono
+              onChange={v=>setEntityProfile(p=>({...p,domain:v}))} placeholder="CORP"/>
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              <div style={{ ...mono, fontSize:9, color:"#3d5a7a", letterSpacing:"0.1em" }}>STEP GAP</div>
+              <div style={{ display:"flex", gap:4 }}>
+                {[5,15,30,60].map(m=>(
+                  <button key={m} onClick={()=>setEntityProfile(p=>({...p,stepGapMinutes:m}))}
+                    style={{ flex:1, padding:"7px 4px", borderRadius:5, cursor:"pointer",
+                      background:(entityProfile.stepGapMinutes||15)===m?"#091828":"#030a17",
+                      border:`1px solid ${(entityProfile.stepGapMinutes||15)===m?"#22d3ee35":"#0c1e38"}`,
+                      color:(entityProfile.stepGapMinutes||15)===m?"#22d3ee":"#3d5a7a",
+                      ...mono, fontSize:10, fontWeight:700 }}>{m}m</button>
+                ))}
+              </div>
+            </div>
+          </div>
+          {(entityProfile.actorUser||entityProfile.actorHost||entityProfile.actorIp) && (
+            <div style={{ marginTop:10, padding:"7px 10px", background:"#030a17",
+              border:"1px solid #10b98130", borderRadius:6,
+              ...mono, fontSize:8, color:"#10b981", lineHeight:1.7 }}>
+              ✓ Entity profile active — replay will substitute these values into log fields (User, ComputerName, IpAddress, etc.)
+              and use {entityProfile.stepGapMinutes||15}m gaps between {flowSteps.length} steps
+              ({flowSteps.length > 0 ? `${Math.round(((flowSteps.length-1)*(entityProfile.stepGapMinutes||15))/60*10)/10}h total window` : "no steps yet"})
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main content area */}
       <div style={{ flex:1, overflow:"hidden", display:"flex", minHeight:0 }}>
 
@@ -1378,7 +1444,7 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
 }
 
 // ── Deploy Drawer (slides up) ─────────────────────────────────────────────────
-function DeployDrawer({ open, onClose, tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGhRepo }) {
+function DeployDrawer({ open, onClose, tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGhRepo, entityProfile }) {
   return (
     <div style={{
       position:"fixed", bottom:0, left:280, right:0,
@@ -1403,7 +1469,8 @@ function DeployDrawer({ open, onClose, tenants, flowSteps, schedule, delta, ghTo
           </div>
           <div style={{ flex:1, overflowY:"auto" }}>
             <DeployTab tenants={tenants} flowSteps={flowSteps} schedule={schedule}
-              delta={delta} ghToken={ghToken} ghRepo={ghRepo} setGhRepo={setGhRepo}/>
+              delta={delta} ghToken={ghToken} ghRepo={ghRepo} setGhRepo={setGhRepo}
+              entityProfile={entityProfile}/>
           </div>
         </div>
       )}
@@ -1421,7 +1488,7 @@ const PHASE_ORDER = [
 
 // ─── GENERATE ARTIFACTS ───────────────────────────────────────────────────────
 
-function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGhRepo }) {
+function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGhRepo, entityProfile }) {
   const [view, setView]         = useState("push");
   const [pushState, setPushState] = useState("idle");
   const [pushLog, setPushLog]   = useState([]);
@@ -1736,6 +1803,27 @@ ${tenants.map(t=>{
 ${flowSteps.map((s,i) => {
   const fname = s.name.replace(/[^a-zA-Z0-9._-]/g,"_");
   const safeLt = s.lt || "UNKNOWN";
+  // Per-step timestamp delta: step 0 is oldest (base delta + all gaps), each step is stepGapMinutes closer to now
+  const totalSteps = flowSteps.length;
+  const gapMin = entityProfile.stepGapMinutes || 15;
+  const baseHours = parseInt((delta||"1d").replace(/[^0-9]/g,"")) || 24;
+  const baseMins = baseHours * 60;
+  const stepOffsetMins = (totalSteps - 1 - i) * gapMin;
+  const totalMins = baseMins + stepOffsetMins;
+  const stepHours = Math.floor(totalMins / 60);
+  const stepMins  = totalMins % 60;
+  const stepDelta = stepMins > 0 ? `${stepHours}h${stepMins}m` : `${stepHours}h`;
+  // Entity map arg: only if profile has values
+  const em = entityProfile;
+  const emParts = [
+    em.actorUser     ? `actor_user=${em.actorUser}`         : null,
+    em.actorHost     ? `actor_host=${em.actorHost}`         : null,
+    em.actorIp       ? `actor_ip=${em.actorIp}`             : null,
+    em.targetHost    ? `target_host=${em.targetHost}`       : null,
+    em.targetIp      ? `target_ip=${em.targetIp}`           : null,
+    em.domain        ? `domain=${em.domain}`                : null,
+  ].filter(Boolean);
+  const entityMapArg = emParts.length ? ` \\\n            --entity-map "${emParts.join(",")}"` : "";
   return `      # ── Step ${i+1}: ${s.name} [${s.technique}]
       - name: "Download ${s.name}"
         if: steps.write_creds.outputs.skip != \'true\'
@@ -1753,7 +1841,8 @@ ${flowSteps.map((s,i) => {
           SECOPS_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
         run: |
           if [ -z "$SECOPS_CUSTOMER_ID" ]; then
-            echo "ERROR: SECOPS_CUSTOMER_ID_\${{ matrix.tenant_id }} secret is not set"; exit 1
+            echo "::warning::Secret SECOPS_CUSTOMER_ID_\${{ matrix.tenant_id }} not set — skipping"
+            exit 0
           fi
           python scripts/replay_dataset.py \\
             --log-file /tmp/attack_data_cache/${fname} \\
@@ -1761,15 +1850,15 @@ ${flowSteps.map((s,i) => {
             --credentials /tmp/secops_creds.json \\
             --customer-id "$SECOPS_CUSTOMER_ID" \\
             --region "\${{ matrix.region }}"\${{ matrix.ingestion_labels && format(' --labels {0}', matrix.ingestion_labels) || '' }} \\
-            --timestamp-delta "${delta}"
+            --timestamp-delta "${stepDelta}"${entityMapArg}
 
       - name: "Pass 2 — Entities: ${s.name}"
-        if: \${{ github.event.inputs.skip_entities != 'true' }}
+        if: steps.write_creds.outputs.skip != \'true\' && \${{ github.event.inputs.skip_entities != 'true' }}
         env:
           SECOPS_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
         run: |
           if [ -z "$SECOPS_CUSTOMER_ID" ]; then
-            echo "ERROR: SECOPS_CUSTOMER_ID_\${{ matrix.tenant_id }} secret is not set"; exit 1
+            exit 0
           fi
           python scripts/replay_dataset.py \\
             --log-file /tmp/attack_data_cache/${fname} \\
@@ -1777,7 +1866,7 @@ ${flowSteps.map((s,i) => {
             --credentials /tmp/secops_creds.json \\
             --customer-id "$SECOPS_CUSTOMER_ID" \\
             --region "\${{ matrix.region }}"\${{ matrix.ingestion_labels && format(' --labels {0}', matrix.ingestion_labels) || '' }} \\
-            --timestamp-delta "${delta}" \\
+            --timestamp-delta "${stepDelta}"${entityMapArg} \\
             --entities`;
 }).join("\n\n")}
 
@@ -1838,6 +1927,10 @@ def main():
     p.add_argument("--timestamp-delta", default="1d")
     p.add_argument("--labels",          default="")
     p.add_argument("--entities",        action="store_true")
+    p.add_argument("--entity-map",      default="",
+                   help="Comma-separated key=value pairs for entity substitution. "
+                        "Supported keys: actor_user, actor_host, actor_ip, target_host, target_ip, domain. "
+                        "Example: actor_user=jsmith,actor_host=DESKTOP-ABC,actor_ip=10.0.1.5")
     args = p.parse_args()
 
     # Validate credentials file is present and valid JSON
@@ -1861,6 +1954,75 @@ def main():
     log_file = Path(args.log_file)
     if not log_file.exists():
         sys.exit(f"[error] Log file not found: {log_file}")
+
+    # ── Entity substitution ──────────────────────────────────────────────────
+    # Parse --entity-map and do find-replace on common field names before ingestion.
+    # We work on a temp copy so the cached file stays untouched.
+    import tempfile, re as _re
+
+    FIELD_PATTERNS = {
+        # key → list of (regex_pattern, replacement_template)
+        # Covers Sysmon XML, WinEvtLog, CrowdStrike, Suricata, OKTA, raw text
+        "actor_user": [
+            (r'(?<="User":")([^"]+)', '{v}'),
+            (r'(?<=\\bSubjectUserName">)([^<]+)', '{v}'),
+            (r'(?<=\\bTargetUserName">)([^<]+)', '{v}'),
+            (r'(?<="user":")([^"]+)', '{v}'),
+            (r'(?<="UserName":")([^"]+)', '{v}'),
+        ],
+        "actor_host": [
+            (r'(?<="ComputerName":")([^"]+)', '{v}'),
+            (r'(?<=\\bComputer">)([^<]+)', '{v}'),
+            (r'(?<="src_device_hostname":")([^"]+)', '{v}'),
+            (r'(?<="hostname":")([^"]+)', '{v}'),
+        ],
+        "actor_ip": [
+            (r'(?<="IpAddress":")([^"]+)(?=")', '{v}'),
+            (r'(?<="src_ip":")([^"]+)(?=")', '{v}'),
+            (r'(?<="sourceIPAddress":")([^"]+)(?=")', '{v}'),
+        ],
+        "target_host": [
+            (r'(?<="DestinationHostname":")([^"]+)', '{v}'),
+            (r'(?<="dest_hostname":")([^"]+)', '{v}'),
+            (r'(?<="dest":")([^"]+)', '{v}'),
+        ],
+        "target_ip": [
+            (r'(?<="DestinationIp":")([^"]+)', '{v}'),
+            (r'(?<="dest_ip":")([^"]+)', '{v}'),
+        ],
+        "domain": [
+            (r'(?<="SubjectDomainName":")([^"]+)', '{v}'),
+            (r'(?<="TargetDomainName":")([^"]+)', '{v}'),
+            (r'(?<="domain":")([^"]+)', '{v}'),
+        ],
+    }
+
+    entity_map = {}
+    if args.entity_map and args.entity_map.strip():
+        for pair in args.entity_map.split(","):
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                entity_map[k.strip()] = v.strip()
+
+    if entity_map:
+        print(f"[info] Applying entity substitutions: {entity_map}")
+        content = log_file.read_text(errors="replace")
+        original_size = len(content)
+        for key, value in entity_map.items():
+            patterns = FIELD_PATTERNS.get(key, [])
+            for pattern, tmpl in patterns:
+                replacement = tmpl.format(v=value)
+                content, n = _re.subn(pattern, replacement, content)
+                if n:
+                    print(f"[info]   {key}: replaced {n} occurrence(s) via pattern {pattern[:40]}…")
+        # Write substituted content to a temp file (don't clobber the cache)
+        suffix = log_file.suffix or ".log"
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode="w")
+        tmp.write(content)
+        tmp.close()
+        log_file = Path(tmp.name)
+        print(f"[info] Entity-substituted log written to {log_file} ({original_size} → {len(content)} bytes)")
+    # ────────────────────────────────────────────────────────────────────────
 
     usecases_dir = get_logstory_usecases_dir()
     print(f"[info] logstory usecases dir: {usecases_dir}")
@@ -2207,6 +2369,11 @@ export default function App() {
   const [ghRepo, setGhRepo]       = useState("keith-manville/demo-data");
   const [deployOpen, setDeployOpen] = useState(false);
   const [geminiKey, setGeminiKey] = useState("");
+  const [entityProfile, setEntityProfile] = useState({
+    actorUser: "", actorHost: "", actorIp: "",
+    targetHost: "", targetIp: "", domain: "",
+    stepGapMinutes: 15,
+  });
 
   // Repo index (background fetch)
   const [repoIndex, setRepoIndex]     = useState(null);
@@ -2249,6 +2416,8 @@ export default function App() {
           repoIndex={repoIndex}
           indexLoading={indexLoading}
           geminiKey={geminiKey}
+          entityProfile={entityProfile}
+          setEntityProfile={setEntityProfile}
         />
       </div>
 
@@ -2263,6 +2432,7 @@ export default function App() {
         ghToken={ghToken}
         ghRepo={ghRepo}
         setGhRepo={setGhRepo}
+        entityProfile={entityProfile}
       />
     </div>
   );
