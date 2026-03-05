@@ -1605,7 +1605,10 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
   // GitHub secrets API: sealed box = X25519 + XSalsa20-Poly1305 + Blake2b nonce
   async function encryptSecret(publicKeyB64, value) {
     const nacl = await _loadNacl();
-    const recipientPk = Uint8Array.from(atob(publicKeyB64), c => c.charCodeAt(0));
+    // GitHub API may return url-safe base64 (- and _); atob() needs standard (+ and /)
+    const standardB64 = publicKeyB64.replace(/-/g, "+").replace(/_/g, "/");
+    const recipientPk = Uint8Array.from(atob(standardB64), c => c.charCodeAt(0));
+    if (recipientPk.length !== 32) throw new Error(`Bad public key length: ${recipientPk.length} (expected 32)`);
     const msgBytes    = new TextEncoder().encode(value);
     const ephemeral   = nacl.box.keyPair();
     const nonceInput  = new Uint8Array(64);
@@ -1658,6 +1661,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
       return;
     }
     const { key_id: keyId, key: publicKey } = pkData;
+    log(`  key_id: ${keyId}  key[0:20]: ${publicKey.substring(0,20)}…`);
 
     for (const t of tenants) {
       const s = t.name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
