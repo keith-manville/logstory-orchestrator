@@ -201,28 +201,7 @@ function toMediaUrl(path) {
   return `${RAW_BASE}/${clean}`;
 }
 
-// ─── STATIC ENTITIES (Attack Range lab — these are real, from the datasets) ──
 
-// ─── FLOW TEMPLATES ───────────────────────────────────────────────────────────
-const FLOW_TEMPLATES = [
-  { id:"tpl1", name:"APT Credential Theft", color:"#ef4444",
-    desc:"Initial phishing → PowerShell execution → LSASS dump → DCSync → Golden Ticket",
-    techniques:["T1566.001","T1059.001","T1003.001","T1003.006","T1558.001"] },
-  { id:"tpl2", name:"Ransomware Chain", color:"#f97316",
-    desc:"Execution → Persistence → Lateral movement → File encryption → Inhibit recovery",
-    techniques:["T1059.001","T1053.005","T1047","T1486","T1490"] },
-  { id:"tpl3", name:"Kerberos Abuse", color:"#a855f7",
-    desc:"Kerberoasting → Pass-the-Hash → Golden Ticket → DCSync",
-    techniques:["T1558.003","T1550.002","T1558.001","T1003.006"] },
-  { id:"tpl4", name:"CTF: Blue Team Hunt", color:"#06b6d4",
-    desc:"Discovery-heavy scenario ideal for detection engineering workshops",
-    techniques:["T1082","T1059.001","T1053.005","T1047","T1218"] },
-  { id:"tpl5", name:"Cobalt Strike C2", color:"#10b981",
-    desc:"Spearphish → C2 beacon → Credential access → Lateral movement",
-    techniques:["T1566.001","T1572","T1003.001","T1021.001","T1047"] },
-];
-
-// ─── SAMPLE JOB HISTORY ──────────────────────────────────────────────────────
 
 
 // ─── STYLES / PRIMITIVES ──────────────────────────────────────────────────────
@@ -464,14 +443,10 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
   // ── Flow builder state ─────────────────────────────────────────────────────
   const [opName, setOpName]           = useState("Operation Chimera");
   const [opDesc, setOpDesc]           = useState("");
-  const [dragIdx, setDragIdx]         = useState(null);
-  const [overIdx, setOverIdx]         = useState(null);
   const [openStep, setOpenStep]       = useState(null);
   const [swapStep, setSwapStep]       = useState(null);
   const [swapVariants, setSwapVariants] = useState({});
   const [loadingSwap, setLoadingSwap] = useState(null);
-  const [activeTpl, setActiveTpl]     = useState(null);
-  const [loadingTpl, setLoadingTpl]   = useState(null);
 
   // ── Dataset browser logic ──────────────────────────────────────────────────
   const loadFolders = async (tok) => {
@@ -547,40 +522,6 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
     setSwapStep(null);
   };
 
-  const moveStep = (from, to) => {
-    if (from === to) return;
-    setFlowSteps(prev => {
-      const a = [...prev]; const [el] = a.splice(from, 1); a.splice(to, 0, el); return a;
-    });
-  };
-
-  const applyTemplate = async (tpl) => {
-    setActiveTpl(tpl.id); setLoadingTpl(tpl.id);
-    setOpName(tpl.name); setOpDesc(tpl.desc);
-    const newSteps = [];
-    for (const tech of tpl.techniques) {
-      try {
-        let ds = cache.yamls[tech];
-        if (!ds) ds = await fetchYamlsForTechnique(tech, ghToken);
-        if (ds.length > 0) {
-          const first = ds[0];
-          if (!newSteps.find(s => s.id === first.id)) newSteps.push(first);
-        }
-      } catch(e) {
-        newSteps.push({
-          id: `placeholder/${tech}`, technique: tech, tool: "atomic_red_team",
-          name: `${tech}-dataset`,
-          mediaUrl: `${RAW_BASE}/datasets/attack_techniques/${tech}/atomic_red_team/windows-sysmon.log`,
-          lt: "WINDOWS_SYSMON", ltColor: "#3b82f6", mitre: [tech],
-          desc: `${getTactic(tech)} technique dataset`,
-          source: "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
-        });
-      }
-    }
-    setFlowSteps(newSteps);
-    setLoadingTpl(null);
-  };
-
   const tacticCoverage = {};
   flowSteps.forEach(s => (s.mitre||[]).forEach(m => {
     const t = getTactic(m); tacticCoverage[t] = (tacticCoverage[t]||0)+1;
@@ -602,62 +543,71 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
 
-      {/* ── Templates ───────────────────────────────────────────────────────── */}
+      {/* ── Op metadata + import ───────────────────────────────────────────── */}
       <Card>
-        <SectionLabel>FLOW TEMPLATES</SectionLabel>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:8 }}>
-          {FLOW_TEMPLATES.map(tpl => (
-            <div key={tpl.id} onClick={()=>applyTemplate(tpl)}
-              style={{ padding:12, borderRadius:8, cursor:"pointer",
-                background: activeTpl===tpl.id ? `${tpl.color}12` : "#030a17",
-                border:`1px solid ${activeTpl===tpl.id ? tpl.color+"45":"#0c1e38"}`,
-                transition:"all .15s", position:"relative" }}>
-              {loadingTpl===tpl.id && <div style={{ position:"absolute", top:8, right:8 }}><Spinner size={10}/></div>}
-              <div style={{ width:6, height:6, borderRadius:"50%", background:tpl.color, marginBottom:10 }}/>
-              <div style={{...sans, fontSize:11, fontWeight:700, color:"#c8d8f0", marginBottom:4 }}>{tpl.name}</div>
-              <div style={{...sans, fontSize:10, color:"#2a4060", lineHeight:1.4, marginBottom:8 }}>{tpl.desc}</div>
-              <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{tpl.techniques.length} TTPs</span>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr auto", gap:12, alignItems:"end" }}>
+          <Inp label="Operation / CTF Name" value={opName} onChange={setOpName} placeholder="Operation Chimera"/>
+          <Inp label="Brief / Scenario Description" value={opDesc} onChange={setOpDesc}
+            placeholder="Blue team detection workshop…"/>
+          <div>
+            <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:6, letterSpacing:"0.08em"}}>
+              IMPORT TECHNIQUES
             </div>
-          ))}
+            <div style={{ display:"flex", gap:8 }}>
+              <input
+                placeholder="T1078, T1055, T1003…  (comma-separated or paste JSON)"
+                style={{ width:320, background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
+                  padding:"7px 10px", color:"#c8d8f0", ...mono, fontSize:11, outline:"none" }}
+                onKeyDown={e => {
+                  if (e.key !== "Enter") return;
+                  const val = e.target.value.trim();
+                  let techs = [];
+                  try {
+                    const parsed = JSON.parse(val);
+                    // Accept attack-flow JSON export or plain array
+                    if (Array.isArray(parsed)) techs = parsed.map(t => typeof t==="string"?t:t.technique).filter(Boolean);
+                    else if (parsed.steps) techs = parsed.steps.map(s=>s.technique).filter(Boolean);
+                  } catch {
+                    techs = val.split(/[,\s]+/).map(s=>s.trim()).filter(s=>/^T\d/.test(s));
+                  }
+                  if (techs.length > 0) {
+                    techs.forEach(tech => {
+                      const id = `import/${tech}/${Date.now()}`;
+                      addToFlow({ id, technique:tech, name:`${tech}-dataset`, lt:"UNKNOWN",
+                        ltColor:"#475569", mitre:[tech], desc:`Imported technique`,
+                        mediaUrl:`${RAW_BASE}/datasets/attack_techniques/${tech}/atomic_red_team/windows-sysmon.log`,
+                        source:"", sourcetype:"" });
+                    });
+                    e.target.value = "";
+                  }
+                }}
+              />
+            </div>
+            <div style={{...mono, fontSize:9, color:"#1e3a5f", marginTop:4}}>
+              Press Enter · accepts T-IDs, comma list, or ATT&amp;CK Flow JSON export
+            </div>
+          </div>
         </div>
       </Card>
 
-      {/* ── Metadata + Coverage ─────────────────────────────────────────────── */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-        <Card>
-          <SectionLabel>OPERATION METADATA</SectionLabel>
-          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            <Inp label="Operation / CTF Name" value={opName} onChange={setOpName} placeholder="Operation Chimera"/>
-            <Inp label="Brief / Scenario Description" value={opDesc} onChange={setOpDesc}
-              placeholder="Workshop scenario for blue team detection…"/>
-          </div>
-        </Card>
-        <Card>
-          <SectionLabel>TACTIC COVERAGE</SectionLabel>
-          {Object.keys(tacticCoverage).length === 0
-            ? <div style={{...sans, fontSize:11, color:"#1e3a5f"}}>Add steps to see coverage</div>
-            : <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
-                {Object.entries(tacticCoverage).map(([t,n]) => {
-                  const c = TACTIC_COLORS[t]||"#475569";
-                  return (
-                    <div key={t} style={{ display:"flex", alignItems:"center", gap:5,
-                      padding:"4px 8px", background:`${c}12`, borderRadius:5, border:`1px solid ${c}28` }}>
-                      <span style={{...mono, fontSize:9, color:c}}>{t}</span>
-                      <span style={{ background:c, color:"#fff", borderRadius:"50%",
-                        width:15, height:15, display:"flex", alignItems:"center",
-                        justifyContent:"center", fontSize:9, fontWeight:"bold" }}>{n}</span>
-                    </div>
-                  );
-                })}
-              </div>
-          }
-        </Card>
-      </div>
-
-      {/* ── Flow Canvas ─────────────────────────────────────────────────────── */}
+      {/* ── Attack chain ────────────────────────────────────────────────────── */}
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-          <SectionLabel>ATTACK CHAIN — {flowSteps.length} STEPS</SectionLabel>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <SectionLabel>ATTACK CHAIN — {flowSteps.length} STEPS</SectionLabel>
+            {Object.entries(tacticCoverage).map(([t,n]) => {
+              const c = TACTIC_COLORS[t]||"#475569";
+              return (
+                <div key={t} style={{ display:"flex", alignItems:"center", gap:4,
+                  padding:"2px 7px", background:`${c}12`, borderRadius:4, border:`1px solid ${c}28` }}>
+                  <span style={{...mono, fontSize:9, color:c}}>{t}</span>
+                  <span style={{ background:c, color:"#fff", borderRadius:"50%",
+                    width:14, height:14, display:"flex", alignItems:"center",
+                    justifyContent:"center", fontSize:8, fontWeight:"bold" }}>{n}</span>
+                </div>
+              );
+            })}
+          </div>
           <div style={{ display:"flex", gap:8 }}>
             {flowSteps.length > 0 && <Btn variant="secondary" sm onClick={()=>setFlowSteps([])}>clear all</Btn>}
             <Btn variant="primary" sm onClick={()=>setBrowserOpen(v=>!v)}>
@@ -668,7 +618,7 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
 
         {flowSteps.length === 0 && !browserOpen && (
           <div style={{ padding:"40px 0", textAlign:"center", ...sans, fontSize:12, color:"#162035" }}>
-            Apply a template above, or click <strong style={{color:"#22d3ee"}}>+ add step</strong> to browse datasets
+            Paste technique IDs above and press Enter, or click <strong style={{color:"#22d3ee"}}>+ add step</strong> to browse datasets
           </div>
         )}
 
@@ -681,21 +631,31 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
               const variants = swapVariants[s.id] || [];
               return (
                 <div key={s.id}>
-                  <div draggable
-                    onDragStart={()=>setDragIdx(i)}
-                    onDragOver={e=>{e.preventDefault();setOverIdx(i);}}
-                    onDrop={()=>{moveStep(dragIdx,i);setDragIdx(null);setOverIdx(null);}}
-                    onDragEnd={()=>{setDragIdx(null);setOverIdx(null);}}
-                    style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 12px",
-                      background: overIdx===i?"#091828": isSwap?"#091828":"#040c1a",
-                      border:`1px solid ${overIdx===i?"#22d3ee35":isSwap?"#f59e0b35":"#0c1e38"}`,
-                      borderRadius: isSwap||isOpen ? "8px 8px 0 0" : 8,
-                      cursor:"grab", opacity:dragIdx===i?.35:1, animation:"slideUp .2s" }}>
-                    <div style={{ width:28, height:28, borderRadius:"50%", flexShrink:0,
-                      background:`${tc}18`, border:`2px solid ${tc}55`,
-                      display:"flex", alignItems:"center", justifyContent:"center",
-                      ...mono, fontSize:11, fontWeight:700, color:tc }}>{i+1}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 12px",
+                    background: isSwap?"#091828":"#040c1a",
+                    border:`1px solid ${isSwap?"#f59e0b35":"#0c1e38"}`,
+                    borderRadius: isSwap||isOpen ? "8px 8px 0 0" : 8 }}>
+
+                    {/* step number */}
+                    <div style={{ display:"flex", flexDirection:"column", gap:2, alignItems:"center", flexShrink:0 }}>
+                      <div style={{ width:28, height:28, borderRadius:"50%",
+                        background:`${tc}18`, border:`2px solid ${tc}55`,
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        ...mono, fontSize:11, fontWeight:700, color:tc }}>{i+1}</div>
+                      <div style={{ display:"flex", flexDirection:"column", gap:1 }}>
+                        <button onClick={()=>{ if(i===0) return; setFlowSteps(p=>{const a=[...p];[a[i-1],a[i]]=[a[i],a[i-1]];return a;}); }}
+                          disabled={i===0}
+                          style={{ background:"none", border:"none", color:i===0?"#0c1e38":"#3d5a7a",
+                            cursor:i===0?"default":"pointer", fontSize:9, padding:"1px 3px", lineHeight:1 }}>▲</button>
+                        <button onClick={()=>{ if(i===flowSteps.length-1) return; setFlowSteps(p=>{const a=[...p];[a[i],a[i+1]]=[a[i+1],a[i]];return a;}); }}
+                          disabled={i===flowSteps.length-1}
+                          style={{ background:"none", border:"none", color:i===flowSteps.length-1?"#0c1e38":"#3d5a7a",
+                            cursor:i===flowSteps.length-1?"default":"pointer", fontSize:9, padding:"1px 3px", lineHeight:1 }}>▼</button>
+                      </div>
+                    </div>
+
                     <div style={{ width:3, height:36, borderRadius:2, background:tc, flexShrink:0 }}/>
+
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:3 }}>
                         <span style={{...mono, fontSize:12, color:"#c8d8f0", fontWeight:600 }}>{s.name}</span>
@@ -708,6 +668,7 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
                       </div>
                       <div style={{...sans, fontSize:10, color:"#2a4060" }}>{s.desc?.slice(0,80)}{s.desc?.length>80?"…":""}</div>
                     </div>
+
                     <Pill label={getTactic(s.technique)} color={tc} sm dot/>
                     <div style={{ display:"flex", gap:5, flexShrink:0 }}>
                       <Btn variant={isSwap?"primary":"ghost"} sm onClick={e=>{e.stopPropagation();openSwap(s);}}>
@@ -717,7 +678,6 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
                         {isOpen?"▲":"▼"}
                       </Btn>
                       <Btn variant="danger" sm onClick={()=>setFlowSteps(p=>p.filter(x=>x.id!==s.id))}>×</Btn>
-                      <span style={{ color:"#0c1e38", fontSize:14, padding:"0 2px", cursor:"grab" }}>⠿</span>
                     </div>
                   </div>
 
@@ -976,16 +936,15 @@ function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
   );
 }
 
-// ─── ENTITY EXPLORER ──────────────────────────────────────────────────────────
-
-// ─── ENTITY EXPLORER ──────────────────────────────────────────────────────────
-
-function TenantManager({ tenants, setTenants }) {
+function ConfigTab({ tenants, setTenants, schedule, setSchedule, delta, setDelta, ghToken, setGhToken, ghRepo, setGhRepo }) {
   const empty = { name:"", label:"", customerId:"", region:"US", credentials:"", ingestionLabels:[] };
-  const [form, setForm] = useState(empty);
+  const [form, setForm]     = useState(empty);
   const [editIdx, setEditIdx] = useState(null);
   const [labelKey, setLabelKey] = useState("");
   const [labelVal, setLabelVal] = useState("");
+  const [preset, setPreset] = useState("Daily midnight");
+  const [showTokenForm, setShowTokenForm] = useState(false);
+  const [tokenInput, setTokenInput] = useState(ghToken);
   const f = k => v => setForm(p=>({...p,[k]:v}));
 
   const save = () => {
@@ -1003,15 +962,106 @@ function TenantManager({ tenants, setTenants }) {
   };
 
   const removeLabel = idx => setForm(p=>({...p, ingestionLabels:(p.ingestionLabels||[]).filter((_,i)=>i!==idx)}));
+  const parts = schedule.split(" ");
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+    <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+
+      {/* ── GitHub / API ─────────────────────────────────────────────────── */}
       <Card>
-        <SectionLabel>{editIdx!==null?"EDIT TENANT":"ADD TENANT"}</SectionLabel>
+        <SectionLabel>GITHUB</SectionLabel>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-          <Inp label="Tenant ID (safe for GitHub secret names)" value={form.name} onChange={f("name")} placeholder="acme-prod" mono/>
+          <div>
+            <Inp label="Runner repo (owner/repo)" value={ghRepo} onChange={setGhRepo}
+              mono placeholder="keith-manville/demo-data"/>
+          </div>
+          <div>
+            <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:6, letterSpacing:"0.08em"}}>GITHUB TOKEN</div>
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              {ghToken
+                ? <div style={{ display:"flex", gap:8, alignItems:"center", flex:1 }}>
+                    <Pill label="token set ✓" color="#10b981" sm/>
+                    <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>5,000 req/hr</span>
+                    <Btn variant="ghost" sm onClick={()=>setShowTokenForm(v=>!v)}>update</Btn>
+                  </div>
+                : <Btn variant="secondary" sm onClick={()=>setShowTokenForm(v=>!v)}>+ add token</Btn>
+              }
+            </div>
+            {showTokenForm && (
+              <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                <input value={tokenInput} onChange={e=>setTokenInput(e.target.value)}
+                  placeholder="ghp_xxxxxxxxxxxx" type="password"
+                  style={{ flex:1, background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
+                    padding:"7px 10px", color:"#c8d8f0", ...mono, fontSize:11, outline:"none" }}/>
+                <Btn sm onClick={()=>{ setGhToken(tokenInput); setShowTokenForm(false); }}>save</Btn>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {/* ── Schedule ─────────────────────────────────────────────────────── */}
+      <Card>
+        <SectionLabel>SCHEDULE & TIMING</SectionLabel>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+          {/* cron */}
+          <div>
+            <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:8, letterSpacing:"0.08em"}}>CRON PRESET</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
+              {CRON_PRESETS.map(p=>(
+                <button key={p.l} onClick={()=>{setPreset(p.l);if(p.c)setSchedule(p.c);}}
+                  style={{ padding:"7px 10px", textAlign:"left",
+                    background:preset===p.l?"#091828":"#030a17",
+                    border:`1px solid ${preset===p.l?"#22d3ee35":"#0c1e38"}`,
+                    color:preset===p.l?"#22d3ee":"#3d5a7a", borderRadius:6,
+                    ...mono, fontSize:10, cursor:"pointer" }}>{p.l}</button>
+              ))}
+            </div>
+            {preset==="Custom" && (
+              <Inp label="Cron Expression" value={schedule} onChange={setSchedule} placeholder="1 0 * * *" mono/>
+            )}
+            <div style={{ display:"flex", gap:5, marginTop:8 }}>
+              {["MIN","HOUR","DOM","MON","DOW"].map((lbl,i)=>(
+                <div key={lbl} style={{ flex:1, textAlign:"center", background:"#030a17",
+                  border:"1px solid #0c1e38", borderRadius:6, padding:"8px 4px" }}>
+                  <div style={{...mono, fontSize:7, color:"#1e3a5f", marginBottom:3}}>{lbl}</div>
+                  <div style={{...mono, fontSize:14, color:"#22d3ee", fontWeight:700}}>{parts[i]||"*"}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* delta */}
+          <div>
+            <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:8, letterSpacing:"0.08em"}}>TIMESTAMP DELTA</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
+              {["1d","1d1h","2d","0d"].map(v=>(
+                <button key={v} onClick={()=>setDelta(v)}
+                  style={{ padding:"12px 8px", borderRadius:6, cursor:"pointer",
+                    background:delta===v?"#091828":"#030a17",
+                    border:`1px solid ${delta===v?"#22d3ee35":"#0c1e38"}`,
+                    color:delta===v?"#22d3ee":"#3d5a7a",
+                    ...mono, fontSize:16, fontWeight:700 }}>{v}</button>
+              ))}
+            </div>
+            <div style={{ padding:"10px 12px", background:"#030a17", border:"1px solid #0c1e38",
+              borderRadius:6, ...mono, fontSize:10, color:"#3d5a7a", lineHeight:1.5 }}>
+              {{"1d":"Recommended for daily midnight cron — events land yesterday, within detection window",
+                "1d1h":"Offset by 1d1h — prevents deduplication if running multiple times",
+                "2d":"Use when your ingestion pipeline has a lag before alerts fire",
+                "0d":"Updates date only, keeps HH:MM:SS — events may appear as future timestamps",
+              }[delta]}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* ── Tenants ───────────────────────────────────────────────────────── */}
+      <Card>
+        <SectionLabel>{editIdx!==null ? "EDIT TENANT" : "ADD TENANT"}</SectionLabel>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:12 }}>
+          <Inp label="Tenant ID" value={form.name} onChange={f("name")} placeholder="acme-prod" mono/>
           <Inp label="Display Label" value={form.label} onChange={f("label")} placeholder="Acme Production"/>
-          <Inp label="Customer ID (UUID)" value={form.customerId} onChange={f("customerId")} placeholder="01234567-0123-4321-abcd-…" mono/>
+          <Inp label="Customer ID (UUID)" value={form.customerId} onChange={f("customerId")} placeholder="01234567-…" mono/>
           <Sel label="Region" value={form.region} onChange={f("region")} options={REGIONS}/>
           <div style={{ gridColumn:"1/-1" }}>
             <Inp label="Service Account Credentials JSON" value={form.credentials} onChange={f("credentials")}
@@ -1019,10 +1069,9 @@ function TenantManager({ tenants, setTenants }) {
           </div>
         </div>
 
-        {/* Ingestion Labels */}
-        <div style={{ marginTop:14 }}>
-          <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:8, letterSpacing:"0.08em" }}>
-            INGESTION LABELS (key-value pairs added to every ingested event)
+        <div style={{ marginTop:12 }}>
+          <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:6, letterSpacing:"0.08em"}}>
+            INGESTION LABELS
           </div>
           {(form.ingestionLabels||[]).length > 0 && (
             <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
@@ -1030,139 +1079,69 @@ function TenantManager({ tenants, setTenants }) {
                 <span key={i} style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"3px 8px",
                   background:"#0a1628", border:"1px solid #0c1e38", borderRadius:5,
                   ...mono, fontSize:10, color:"#22d3ee" }}>
-                  <span style={{ color:"#3d5a7a" }}>{lbl.key}</span>
-                  <span style={{ color:"#1e3a5f" }}>=</span>
-                  <span>{lbl.value}</span>
-                  <span onClick={()=>removeLabel(i)} style={{ cursor:"pointer", color:"#ef4444", marginLeft:2 }}>×</span>
+                  <span style={{ color:"#3d5a7a" }}>{lbl.key}</span>=<span>{lbl.value}</span>
+                  <span onClick={()=>removeLabel(i)} style={{ cursor:"pointer", color:"#ef4444" }}>×</span>
                 </span>
               ))}
             </div>
           )}
-          <div style={{ display:"flex", gap:8, alignItems:"flex-end" }}>
-            <div style={{ flex:1 }}>
-              <Inp label="Key (e.g. env, source, campaign)" value={labelKey} onChange={setLabelKey} mono placeholder="env"/>
-            </div>
-            <div style={{ flex:1 }}>
-              <Inp label="Value (e.g. demo, atomic-labs, rsac-2026)" value={labelVal} onChange={setLabelVal} mono placeholder="demo"/>
-            </div>
-            <Btn onClick={addLabel} sm style={{ marginBottom:1 }}>+ ADD</Btn>
-          </div>
-          <div style={{...mono, fontSize:9, color:"#1e3a5f", marginTop:6 }}>
-            Labels appear as <code style={{color:"#22d3ee"}}>metadata.ingestion_labels</code> in UDM events. Useful for filtering by campaign, tenant, or source in UDM search.
+          <div style={{ display:"flex", gap:8 }}>
+            <div style={{ flex:1 }}><Inp label="Key" value={labelKey} onChange={setLabelKey} mono placeholder="env"/></div>
+            <div style={{ flex:1 }}><Inp label="Value" value={labelVal} onChange={setLabelVal} mono placeholder="demo"/></div>
+            <Btn onClick={addLabel} sm style={{ marginBottom:1 }}>+ add</Btn>
           </div>
         </div>
 
-        <div style={{ display:"flex", gap:8, marginTop:14 }}>
-          <Btn onClick={save}>{editIdx!==null?"UPDATE":"+ ADD TENANT"}</Btn>
-          {editIdx!==null && <Btn variant="secondary" onClick={()=>{setEditIdx(null);setForm(empty);setLabelKey("");setLabelVal("");}}>CANCEL</Btn>}
+        <div style={{ display:"flex", gap:8, marginTop:12 }}>
+          <Btn onClick={save}>{editIdx!==null ? "update" : "+ add tenant"}</Btn>
+          {editIdx!==null && <Btn variant="secondary" onClick={()=>{setEditIdx(null);setForm(empty);setLabelKey("");setLabelVal("");}}>cancel</Btn>}
         </div>
       </Card>
-      {tenants.length === 0 && (
-        <div style={{ padding:"24px", textAlign:"center", ...sans, fontSize:12, color:"#1e3a5f",
-          border:"1px dashed #0c1e38", borderRadius:8 }}>
-          Add SecOps tenants — each becomes a matrix job in the generated workflow
-        </div>
-      )}
-      {tenants.map((t,i) => (
-        <Card key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <Dot status="idle"/>
-            <div>
-              <div style={{...sans, fontSize:14, fontWeight:600, color:"#c8d8f0" }}>{t.label||t.name}</div>
-              <div style={{...mono, fontSize:10, color:"#1e3a5f" }}>
-                {t.customerId?t.customerId.slice(0,20)+"…":"no id"} · {t.region}
-              </div>
-              {(t.ingestionLabels||[]).length > 0 && (
-                <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginTop:4 }}>
-                  {t.ingestionLabels.map((lbl,li)=>(
-                    <span key={li} style={{...mono, fontSize:9, color:"#3d5a7a", background:"#040c1a",
-                      border:"1px solid #0c1e38", borderRadius:3, padding:"1px 5px"}}>
-                      {lbl.key}={lbl.value}
-                    </span>
-                  ))}
+
+      {tenants.length === 0
+        ? <div style={{ padding:"24px", textAlign:"center", ...sans, fontSize:12, color:"#1e3a5f",
+            border:"1px dashed #0c1e38", borderRadius:8 }}>
+            Add SecOps tenants — each becomes a matrix job in the generated workflow
+          </div>
+        : tenants.map((t,i)=>(
+          <Card key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 16px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <Dot status="idle"/>
+              <div>
+                <div style={{...sans, fontSize:13, fontWeight:600, color:"#c8d8f0"}}>{t.label||t.name}</div>
+                <div style={{...mono, fontSize:10, color:"#1e3a5f"}}>
+                  {t.customerId ? t.customerId.slice(0,20)+"…" : "no id"} · {t.region}
                 </div>
-              )}
+                {(t.ingestionLabels||[]).length > 0 && (
+                  <div style={{ display:"flex", gap:4, marginTop:3, flexWrap:"wrap" }}>
+                    {t.ingestionLabels.map((lbl,li)=>(
+                      <span key={li} style={{...mono, fontSize:9, color:"#3d5a7a", background:"#040c1a",
+                        border:"1px solid #0c1e38", borderRadius:3, padding:"1px 5px"}}>
+                        {lbl.key}={lbl.value}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-            <Pill label={t.region} color="#22d3ee" sm/>
-            {t.credentials && <Pill label="creds ✓" color="#10b981" sm/>}
-            {(t.ingestionLabels||[]).length > 0 && <Pill label={`${t.ingestionLabels.length} labels`} color="#8b5cf6" sm/>}
-            <Btn variant="ghost" sm onClick={()=>{setForm({...t, ingestionLabels:t.ingestionLabels||[]});setEditIdx(i);}}>edit</Btn>
-            <Btn variant="danger" sm onClick={()=>setTenants(t=>t.filter((_,j)=>j!==i))}>×</Btn>
-          </div>
-        </Card>
-      ))}
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+              <Pill label={t.region} color="#22d3ee" sm/>
+              {t.credentials && <Pill label="creds ✓" color="#10b981" sm/>}
+              {(t.ingestionLabels||[]).length > 0 && <Pill label={`${t.ingestionLabels.length} labels`} color="#8b5cf6" sm/>}
+              <Btn variant="ghost" sm onClick={()=>{setForm({...t, ingestionLabels:t.ingestionLabels||[]});setEditIdx(i);}}>edit</Btn>
+              <Btn variant="danger" sm onClick={()=>setTenants(t=>t.filter((_,j)=>j!==i))}>×</Btn>
+            </div>
+          </Card>
+        ))
+      }
     </div>
   );
 }
 
-// ─── SCHEDULE BUILDER ─────────────────────────────────────────────────────────
-
-const CRON_PRESETS = [
-  {l:"Daily midnight",c:"1 0 * * *"},{l:"Daily 6am UTC",c:"0 6 * * *"},
-  {l:"Every 6h",c:"0 */6 * * *"},{l:"Weekly Mon",c:"1 0 * * 1"},
-  {l:"Twice daily",c:"1 0,12 * * *"},{l:"Custom",c:""},
-];
-
-function ScheduleBuilder({ schedule, setSchedule, delta, setDelta }) {
-  const [preset, setPreset] = useState("Daily midnight");
-  const parts = schedule.split(" ");
-  return (
-    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-      <Card>
-        <SectionLabel>CRON SCHEDULE</SectionLabel>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
-          {CRON_PRESETS.map(p=>(
-            <button key={p.l} onClick={()=>{setPreset(p.l);if(p.c)setSchedule(p.c);}}
-              style={{ padding:"9px 12px", textAlign:"left",
-                background:preset===p.l?"#091828":"#030a17",
-                border:`1px solid ${preset===p.l?"#22d3ee35":"#0c1e38"}`,
-                color:preset===p.l?"#22d3ee":"#3d5a7a", borderRadius:6,
-                ...mono, fontSize:10, cursor:"pointer" }}>{p.l}</button>
-          ))}
-        </div>
-        {preset==="Custom" && (
-          <div style={{ marginBottom:14 }}>
-            <Inp label="Cron Expression" value={schedule} onChange={setSchedule} placeholder="1 0 * * *" mono/>
-          </div>
-        )}
-        <div style={{ display:"flex", gap:6, marginBottom:10 }}>
-          {["MIN","HOUR","DOM","MON","DOW"].map((f,i)=>(
-            <div key={f} style={{ flex:1, textAlign:"center", background:"#030a17",
-              border:"1px solid #0c1e38", borderRadius:6, padding:"10px 6px" }}>
-              <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>{f}</div>
-              <div style={{...mono, fontSize:18, color:"#22d3ee", fontWeight:700 }}>{parts[i]||"*"}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ padding:"8px 12px", background:"#030a17", border:"1px solid #0c1e38", borderRadius:6 }}>
-          <span style={{...mono, fontSize:11, color:"#3d5a7a" }}>cron: </span>
-          <span style={{...mono, fontSize:11, color:"#22d3ee" }}>'{schedule}'</span>
-        </div>
-      </Card>
-      <Card>
-        <SectionLabel>TIMESTAMP DELTA</SectionLabel>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:10 }}>
-          {["1d","1d1h","2d","0d"].map(v=>(
-            <button key={v} onClick={()=>setDelta(v)}
-              style={{ padding:10, borderRadius:6, cursor:"pointer",
-                background:delta===v?"#091828":"#030a17",
-                border:`1px solid ${delta===v?"#22d3ee35":"#0c1e38"}`,
-                color:delta===v?"#22d3ee":"#3d5a7a",
-                ...mono, fontSize:14, fontWeight:700 }}>{v}</button>
-          ))}
-        </div>
-        <div style={{...mono, fontSize:10, color:"#1e3a5f" }}>{{
-          "1d":"Recommended for daily midnight cron — events land yesterday, within detection window",
-          "1d1h":"Offset by 1d1h — prevents deduplication if running multiple times per day",
-          "2d":"Use when your ingestion pipeline has a lag before alerts fire",
-          "0d":"Updates date only, keeps HH:MM:SS — events may appear as future timestamps",
-        }[delta]}</div>
-      </Card>
-    </div>
-  );
-}
+// ─── ENTITY EXTRACTOR PREVIEW ─────────────────────────────────────────────────
+// Shows what UDM entity NDJSON will be generated for a given flow
+// Based on known Attack Range entities — in production, extract_entities.py
+// parses the actual downloaded log files.
 
 // ─── ENTITY EXTRACTOR PREVIEW ─────────────────────────────────────────────────
 // Shows what UDM entity NDJSON will be generated for a given flow
@@ -1275,29 +1254,40 @@ function buildEntityNdjson(flowSteps) {
 
 // ─── GENERATE ARTIFACTS ───────────────────────────────────────────────────────
 
-function GenerateTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGhRepo }) {
-  const [view, setView] = useState("workflow");
+function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGhRepo }) {
+  const [view, setView]         = useState("push");
   const [pushState, setPushState] = useState("idle");
-  const [pushLog, setPushLog] = useState([]);
+  const [pushLog, setPushLog]   = useState([]);
   const [pushRepo, setPushRepo] = useState(ghRepo || "");
+
+  // status monitor state
+  const [runs, setRuns]         = useState([]);
+  const [loadingRuns, setLoadingRuns] = useState(false);
+  const [runError, setRunError] = useState(null);
+  const [expandedRun, setExpandedRun] = useState(null);
+  const [triggering, setTriggering] = useState(false);
+  const [lastFetch, setLastFetch] = useState(null);
 
   useEffect(() => { if(ghRepo) setPushRepo(ghRepo); }, [ghRepo]);
 
+  const ready = tenants.length > 0 && flowSteps.length > 0;
+  const repoValid = pushRepo && pushRepo.includes("/");
+
+  // ── push logic ────────────────────────────────────────────────────────────
   async function getFileSha(repo, path, token) {
     try {
       const r = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
       });
       if (r.status === 404) return null;
-      const d = await r.json();
-      return d.sha || null;
+      return (await r.json()).sha || null;
     } catch { return null; }
   }
 
-  async function pushFile(repo, path, content, token, log) {
+  async function pushFile(repo, path, fileContent, token, log) {
     const sha = await getFileSha(repo, path, token);
-    const encoded = btoa(unescape(encodeURIComponent(content)));
-    const body = { message: `chore: update ${path} via logstory-orchestrator`, content: encoded, ...(sha ? { sha } : {}) };
+    const body = { message: `chore: update ${path} via logstory-orchestrator`,
+      content: btoa(unescape(encodeURIComponent(fileContent))), ...(sha ? { sha } : {}) };
     const r = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
@@ -1309,8 +1299,8 @@ function GenerateTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, set
   }
 
   async function handlePush() {
-    if (!ghToken) { setPushLog(["✗  No GitHub token — add it in the Datasets tab"]); setPushState("error"); return; }
-    if (!pushRepo || !pushRepo.includes("/")) { setPushLog(["✗  Enter a valid repo (owner/repo)"]); setPushState("error"); return; }
+    if (!ghToken) { setPushLog(["✗  No GitHub token — add it in Config"]); setPushState("error"); return; }
+    if (!repoValid) { setPushLog(["✗  Enter a valid repo (owner/repo)"]); setPushState("error"); return; }
     if (!ready) { setPushLog(["✗  Add tenants and an attack flow first"]); setPushState("error"); return; }
     setPushState("pushing"); setPushLog([`Pushing to ${pushRepo} …`]);
     if (setGhRepo) setGhRepo(pushRepo);
@@ -1319,32 +1309,92 @@ function GenerateTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, set
       log(""); log("── workflow ─────────────────────────────────────────────");
       await pushFile(pushRepo, ".github/workflows/logstory-replay.yml", workflow, ghToken, log);
       log(""); log("── scripts ──────────────────────────────────────────────");
-      await pushFile(pushRepo, "scripts/replay_dataset.py",    replayScript,            ghToken, log);
-      await pushFile(pushRepo, "scripts/extract_entities.py",  entityExtractStandalone,  ghToken, log);
+      await pushFile(pushRepo, "scripts/replay_dataset.py", replayScript, ghToken, log);
+      await pushFile(pushRepo, "scripts/extract_entities.py", entityExtractStandalone, ghToken, log);
+      await pushFile(pushRepo, "requirements.txt", "logstory\n", ghToken, log);
       log(""); log("── README ───────────────────────────────────────────────");
       const readme = `# demo-data\n\nLogstory attack data replay runner.\nGenerated by [logstory-orchestrator](https://keith-manville.github.io/logstory-orchestrator/).\n\n## Required secrets\n\n\`\`\`bash\n${secretCmds}\n\`\`\`\n`;
-      await pushFile(pushRepo, "requirements.txt", "logstory\n", ghToken, log);
       await pushFile(pushRepo, "README.md", readme, ghToken, log);
-      log(""); log("✅  All done — trigger a run from the Status tab.");
+      log(""); log("✅  All done — trigger a run below.");
       setPushState("done");
+      fetchRuns();
     } catch(e) {
       log(""); log("❌  Push failed. Check token has repo + workflow scopes.");
       setPushState("error");
     }
   }
 
-  const ready = tenants.length > 0 && flowSteps.length > 0;
+  // ── run monitor logic ─────────────────────────────────────────────────────
+  const fetchRuns = async () => {
+    if (!repoValid) return;
+    setLoadingRuns(true); setRunError(null);
+    try {
+      const headers = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+      if (ghToken) headers.Authorization = `Bearer ${ghToken}`;
+      const res = await fetch(
+        `https://api.github.com/repos/${pushRepo}/actions/workflows/logstory-replay.yml/runs?per_page=20`,
+        { headers }
+      );
+      if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+      const data = await res.json();
+      setRuns((data.workflow_runs || []).map(r => ({
+        id: String(r.id), runNumber: r.run_number,
+        status: r.conclusion === "success" ? "success" : r.conclusion === "failure" ? "failed"
+              : r.status === "in_progress" ? "running" : r.conclusion || r.status || "unknown",
+        startedAt: r.created_at, actor: r.actor?.login, branch: r.head_branch,
+        trigger: r.event === "schedule" ? "schedule" : r.event === "workflow_dispatch" ? "manual" : r.event,
+        duration: r.updated_at && r.created_at ? Math.round((new Date(r.updated_at)-new Date(r.created_at))/1000) : 0,
+        url: r.html_url,
+      })));
+      setLastFetch(new Date());
+    } catch(e) { setRunError(e.message); }
+    finally { setLoadingRuns(false); }
+  };
+
+  const triggerRun = async () => {
+    if (!repoValid || !ghToken) return;
+    setTriggering(true);
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${pushRepo}/actions/workflows/logstory-replay.yml/dispatches`,
+        { method:"POST", headers:{ Authorization:`Bearer ${ghToken}`, Accept:"application/vnd.github+json",
+            "Content-Type":"application/json", "X-GitHub-Api-Version":"2022-11-28" },
+          body: JSON.stringify({ ref:"main" }) }
+      );
+      if (!res.ok) throw new Error(`Dispatch failed: ${res.status}`);
+      setTimeout(fetchRuns, 3000);
+    } catch(e) { setRunError(e.message); }
+    finally { setTriggering(false); }
+  };
+
+  useEffect(() => { if (repoValid) fetchRuns(); }, [pushRepo, ghToken]);
+
+  const fmt = iso => {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-US",{month:"short",day:"numeric"})+" "+d.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
+  };
+
+  const stats = {
+    total: runs.length,
+    success: runs.filter(j=>j.status==="success").length,
+    failed: runs.filter(j=>j.status==="failed").length,
+    running: runs.filter(j=>j.status==="running").length,
+  };
+  const successRate = runs.length > 0 ? Math.round(stats.success/runs.length*100) : 0;
+
+  // ── workflow/script strings (inherited from GenerateTab logic) ────────────
+  const secretCmds = tenants.length === 0 ? "# Add tenants first" :
+    tenants.flatMap(t => {
+      const s = t.name.toUpperCase().replace(/[^A-Z0-9]/g,"_");
+      return [
+        `# ${t.label||t.name} (${t.region})`,
+        `gh secret set SECOPS_CUSTOMER_ID_${s} --body "${t.customerId||"REPLACE_WITH_UUID"}"`,
+        `gh secret set SECOPS_CREDENTIALS_${s} < /path/to/${t.name}-service-account.json`,
+        "",
+      ];
+    }).join("\n");
 
   const workflow = !ready ? "# Add tenants and build an attack flow first" : `name: Logstory Attack Data Replay
-# ─────────────────────────────────────────────────────────────
-# Ingestion architecture: HTTPS pull from media.githubusercontent.com
-# No git clone of splunk/attack_data required.
-# Two-pass replay per dataset step:
-#   Pass 1 — events:   logstory replay usecase … (default)
-#   Pass 2 — entities: logstory replay usecase … --entities
-# Entity NDJSON is built by extract_entities.py from downloaded logs
-# and placed in ENTITIES/ alongside EVENTS/ before logstory runs.
-# ─────────────────────────────────────────────────────────────
 on:
   schedule:
     - cron: '${schedule}'
@@ -1376,7 +1426,7 @@ ${tenants.map(t=>{
 }).join("\n")}
 
     steps:
-      - name: Checkout this repo (workflow + scripts only)
+      - name: Checkout this repo
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -1404,23 +1454,17 @@ ${tenants.map(t=>{
 ${flowSteps.map((s,i) => {
   const fname = s.name.replace(/[^a-zA-Z0-9._-]/g,"_");
   const safeLt = s.lt || "UNKNOWN";
-  return `      # ── Step ${i+1}: ${s.name} [${s.technique}] ─────────────────────────────
+  return `      # ── Step ${i+1}: ${s.name} [${s.technique}]
       - name: "Download ${s.name}"
         run: |
           mkdir -p /tmp/attack_data_cache
           CACHE_FILE="/tmp/attack_data_cache/${fname}"
           if [ ! -f "$CACHE_FILE" ]; then
-            echo "Downloading ${s.name} from media.githubusercontent.com…"
             curl -fsSL --retry 3 --retry-delay 5 \\
               "${s.mediaUrl}" -o "$CACHE_FILE"
-          else
-            echo "Cache hit: ${s.name}"
           fi
 
       - name: "Pass 1 — Events: ${s.name}"
-        env:
-          LOGSTORY_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
-          LOGSTORY_REGION: \${{ matrix.region }}
         run: |
           python scripts/replay_dataset.py \\
             --log-file /tmp/attack_data_cache/${fname} \\
@@ -1432,9 +1476,6 @@ ${flowSteps.map((s,i) => {
 
       - name: "Pass 2 — Entities: ${s.name}"
         if: \${{ github.event.inputs.skip_entities != 'true' }}
-        env:
-          LOGSTORY_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
-          LOGSTORY_REGION: \${{ matrix.region }}
         run: |
           python scripts/replay_dataset.py \\
             --log-file /tmp/attack_data_cache/${fname} \\
@@ -1452,44 +1493,9 @@ ${flowSteps.map((s,i) => {
 `;
 
   const replayScript = `#!/usr/bin/env python3
-"""
-scripts/replay_dataset.py
-─────────────────────────────────────────────────────────────
-Logstory wrapper for Splunk Attack Data repo.
-
-Ingestion method: HTTPS pull — files are downloaded from
-media.githubusercontent.com by the workflow, then passed here.
-No git clone or LFS required.
-
-Two-pass replay:
-  Pass 1 (default):  replay events via logstory
-  Pass 2 (--entities): extract UDM entities from log, then
-                        replay via logstory --entities
-
-The ENTITIES/ subfolder is built by extract_entities.py and
-placed alongside EVENTS/ before logstory runs, so that
-logstory replay usecase … --entities picks it up automatically.
-─────────────────────────────────────────────────────────────
-"""
+"""scripts/replay_dataset.py — Logstory wrapper for Splunk Attack Data"""
 import argparse, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
-
-SOURCETYPE_TO_LOGTYPE = {
-    "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational": "WINDOWS_SYSMON",
-    "XmlWinEventLog:Security":   "WINEVTLOG",
-    "XmlWinEventLog:System":     "WINEVTLOG",
-    "XmlWinEventLog:Application":"WINEVTLOG",
-    "WinEventLog:Security":      "WINEVTLOG",
-    "XmlWinEventLog:Microsoft-Windows-PowerShell/Operational": "POWERSHELL",
-    "WinEventLog:Microsoft-Windows-PowerShell/Operational":    "POWERSHELL",
-    "crowdstrike:events:sensor": "CS_EDR",
-    "crowdstrike:events:falcon": "CS_EDR",
-    "sysmon:linux":              "LINUX_SYSMON",
-    "Syslog:Linux-Sysmon/Operational": "LINUX_SYSMON",
-    "bro:dns:json":              "BRO_JSON",
-    "bro:conn:json":             "BRO_JSON",
-    "suricata":                  "SURICATA_EVE_JSON",
-}
 
 def main():
     p = argparse.ArgumentParser()
@@ -1499,8 +1505,8 @@ def main():
     p.add_argument("--customer-id",     required=True)
     p.add_argument("--region",          default="US")
     p.add_argument("--timestamp-delta", default="1d")
-    p.add_argument("--entities",        action="store_true",
-                   help="Run entity extraction + entity ingestion pass instead of event pass")
+    p.add_argument("--labels",          default="")
+    p.add_argument("--entities",        action="store_true")
     args = p.parse_args()
 
     log_file = Path(args.log_file)
@@ -1509,775 +1515,290 @@ def main():
 
     with tempfile.TemporaryDirectory() as tmp:
         usecase_root = Path(tmp) / "SPLUNK_ATTACK_DATA"
+        events_dir   = usecase_root / "EVENTS"
+        events_dir.mkdir(parents=True)
+        shutil.copy(log_file, events_dir / f"{args.log_type}.log")
 
-        # ── Pass 1: Events ───────────────────────────────────────────────────
-        if not args.entities:
-            events_dir = usecase_root / "EVENTS"
-            events_dir.mkdir(parents=True)
-            shutil.copy(log_file, events_dir / f"{args.log_type}.log")
-            print(f"[events] Replaying {log_file.name} as {args.log_type}")
+        if args.entities:
+            from extract_entities import extract_entities
+            ndjson = extract_entities(log_file, args.log_type)
+            if ndjson:
+                entity_dir = usecase_root / "ENTITIES"
+                entity_dir.mkdir(parents=True)
+                (entity_dir / f"{args.log_type}.ndjson").write_text(ndjson)
 
-        # ── Pass 2: Entities ─────────────────────────────────────────────────
-        else:
-            # Build entity NDJSON from the downloaded log file
-            entity_ndjson = extract_entities(log_file, args.log_type)
-            if not entity_ndjson:
-                print(f"[entities] No entities extracted from {log_file.name} — skipping")
-                sys.exit(0)
-
-            # Logstory expects: USECASE/EVENTS/<LOGTYPE>.log (must exist)
-            #                   USECASE/ENTITIES/<LOGTYPE>.ndjson
-            events_dir  = usecase_root / "EVENTS"
-            entity_dir  = usecase_root / "ENTITIES"
-            events_dir.mkdir(parents=True)
-            entity_dir.mkdir(parents=True)
-
-            # Events file must exist for logstory to find the usecase,
-            # but we replay with --entities so only the ENTITIES/ folder is sent.
-            shutil.copy(log_file, events_dir / f"{args.log_type}.log")
-
-            entity_file = entity_dir / f"{args.log_type}.ndjson"
-            entity_file.write_text(entity_ndjson)
-            print(f"[entities] Wrote {len(entity_ndjson.splitlines())} entity records → {entity_file}")
-
-        env = {
-            **os.environ,
+        env = { **os.environ,
             "LOGSTORY_CUSTOMER_ID":      args.customer_id,
             "LOGSTORY_CREDENTIALS_PATH": args.credentials,
             "LOGSTORY_REGION":           args.region,
             "LOGSTORY_USECASES_BUCKETS": f"file://{tmp}",
         }
-
-        cmd = [
-            "logstory", "replay", "usecase", "SPLUNK_ATTACK_DATA",
-            f"--timestamp-delta={args.timestamp_delta}",
-        ]
-        if args.entities:
-            cmd.append("--entities")
-
-        result = subprocess.run(cmd, env=env)
-        sys.exit(result.returncode)
-
-
-def extract_entities(log_file: Path, log_type: str) -> str:
-    """
-    Parse a downloaded Splunk Attack Data log file and emit UDM entity NDJSON.
-
-    Strategy per log type:
-      WINDOWS_SYSMON / WINEVTLOG  — XML event log, grep for Computer, User, IpAddress
-      POWERSHELL                  — XML event log, grep for Computer, User
-      CS_EDR                      — JSON lines, extract hostname / userPrincipalName
-      LINUX_SYSMON                — syslog-style, extract hostname from header
-      BRO_JSON / SURICATA_*       — JSON lines, extract id.orig_h / dest_ip
-
-    Returns NDJSON string (one UDM entity JSON object per line).
-    """
-    import json, re
-    from datetime import datetime, timezone
-
-    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    entities = {}  # keyed by (type, value) to deduplicate
-
-    def add_asset(hostname=None, ip=None):
-        if hostname:
-            k = ("asset_host", hostname.lower())
-            if k not in entities:
-                entities[k] = {
-                    "entity": {"asset": {"hostname": hostname, "attribute": {
-                        "labels": [{"key": "source", "value": "splunk_attack_data"}]
-                    }}},
-                    "metadata": {
-                        "entity_type": "ASSET",
-                        "interval": {"start_time": now, "end_time": now},
-                        "source_type": "DERIVED_CONTEXT",
-                        "collected_timestamp": now,
-                        "product_name": "splunk/attack_data replay",
-                        "vendor_name": "Splunk",
-                    }
-                }
-        if ip and not ip.startswith(("0.", "127.", "::1", "-")):
-            k = ("asset_ip", ip)
-            if k not in entities:
-                entities[k] = {
-                    "entity": {"asset": {"ip": [ip], "attribute": {
-                        "labels": [{"key": "source", "value": "splunk_attack_data"}]
-                    }}},
-                    "metadata": {
-                        "entity_type": "ASSET",
-                        "interval": {"start_time": now, "end_time": now},
-                        "source_type": "DERIVED_CONTEXT",
-                        "collected_timestamp": now,
-                        "product_name": "splunk/attack_data replay",
-                        "vendor_name": "Splunk",
-                    }
-                }
-
-    def add_user(username, domain=""):
-        if not username or username in ("-", "SYSTEM", "LOCAL SERVICE", "NETWORK SERVICE"):
-            return
-        k = ("user", username.lower())
-        if k not in entities:
-            entities[k] = {
-                "entity": {"user": {
-                    "user_display_name": username,
-                    "attribute": {"labels": [
-                        {"key": "domain", "value": domain},
-                        {"key": "source", "value": "splunk_attack_data"},
-                    ]}
-                }},
-                "metadata": {
-                    "entity_type": "USER",
-                    "interval": {"start_time": now, "end_time": now},
-                    "source_type": "DERIVED_CONTEXT",
-                    "collected_timestamp": now,
-                    "product_name": "splunk/attack_data replay",
-                    "vendor_name": "Splunk",
-                }
-            }
-
-    raw = log_file.read_text(errors="replace")
-
-    if log_type in ("WINDOWS_SYSMON", "WINEVTLOG", "POWERSHELL"):
-        # XML event log — extract tags
-        for m in re.finditer(r"<Computer>([^<]+)</Computer>", raw):
-            add_asset(hostname=m.group(1).strip())
-        for m in re.finditer(r"<Data Name=['\"]SubjectUserName['\"]>([^<]+)</Data>", raw):
-            val = m.group(1).strip()
-            if val not in ("-", ""):
-                add_user(val)
-        for m in re.finditer(r"<Data Name=['\"]TargetUserName['\"]>([^<]+)</Data>", raw):
-            val = m.group(1).strip()
-            if val not in ("-", ""):
-                add_user(val)
-        for m in re.finditer(r"<Data Name=['\"]IpAddress['\"]>([^<]+)</Data>", raw):
-            ip = m.group(1).strip().lstrip("-")
-            if re.match(r"\\d+\\.\\d+\\.\\d+\\.\\d+", ip):
-                add_asset(ip=ip)
-        for m in re.finditer(r"<Data Name=['\"]DestinationIp['\"]>([^<]+)</Data>", raw):
-            add_asset(ip=m.group(1).strip())
-
-    elif log_type == "CS_EDR":
-        for line in raw.splitlines():
-            try:
-                obj = json.loads(line)
-                if h := obj.get("ComputerName") or obj.get("HostName"):
-                    add_asset(hostname=h)
-                if u := obj.get("UserName") or obj.get("userPrincipalName"):
-                    add_user(u)
-                if ip := obj.get("LocalAddressIP4") or obj.get("RemoteAddressIP4"):
-                    add_asset(ip=ip)
-            except Exception:
-                pass
-
-    elif log_type == "LINUX_SYSMON":
-        for m in re.finditer(r"^\\S+ \\d+ \\d+:\\d+:\\d+ (\\S+) ", raw, re.MULTILINE):
-            add_asset(hostname=m.group(1))
-        for m in re.finditer(r"User=(\\S+)", raw):
-            add_user(m.group(1))
-
-    elif log_type in ("BRO_JSON", "SURICATA_EVE_JSON"):
-        for line in raw.splitlines():
-            try:
-                obj = json.loads(line)
-                for field in ("id.orig_h", "src_ip"):
-                    if ip := obj.get(field):
-                        add_asset(ip=ip)
-                for field in ("id.resp_h", "dest_ip"):
-                    if ip := obj.get(field):
-                        add_asset(ip=ip)
-            except Exception:
-                pass
-
-    return "\\n".join(json.dumps(v) for v in entities.values())
-
+        cmd = ["logstory","replay","usecase","SPLUNK_ATTACK_DATA",
+               f"--timestamp-delta={args.timestamp_delta}"]
+        if args.entities: cmd.append("--entities")
+        sys.exit(subprocess.run(cmd, env=env).returncode)
 
 if __name__ == "__main__":
     main()
 `;
 
   const entityExtractStandalone = `#!/usr/bin/env python3
-"""
-scripts/extract_entities.py  (standalone — for local testing)
-─────────────────────────────────────────────────────────────
-Usage:
-  python scripts/extract_entities.py \\
-    --log-file /tmp/windows-sysmon.log \\
-    --log-type WINDOWS_SYSMON \\
-    --out /tmp/entities.ndjson
-
-  # Then push directly to SecOps entity API:
-  python scripts/push_entities.py \\
-    --ndjson /tmp/entities.ndjson \\
-    --credentials creds.json \\
-    --customer-id <UUID>
-
-Or let replay_dataset.py handle it automatically with --entities flag.
-─────────────────────────────────────────────────────────────
-"""
-# (Entity extraction logic is embedded in replay_dataset.py above.
-#  This standalone wrapper calls the same extract_entities() function.)
-
-import argparse, sys
+"""scripts/extract_entities.py — extract UDM entity NDJSON from Splunk Attack Data logs"""
+import json, re, sys
 from pathlib import Path
-from replay_dataset import extract_entities
+from datetime import datetime, timezone
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--log-file",  required=True)
-    p.add_argument("--log-type",  required=True)
-    p.add_argument("--out",       required=True, help="Output .ndjson path")
-    args = p.parse_args()
+def extract_entities(log_file: Path, log_type: str) -> str:
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+    entities = {}
 
-    ndjson = extract_entities(Path(args.log_file), args.log_type)
-    count = len(ndjson.splitlines()) if ndjson else 0
-    if not count:
-        print("[warn] No entities extracted — check log_type and file contents")
-        sys.exit(0)
+    def asset(hostname=None, ip=None):
+        if hostname:
+            k = ("h", hostname.lower())
+            if k not in entities:
+                entities[k] = {"entity":{"asset":{"hostname":hostname,"attribute":{"labels":[{"key":"source","value":"splunk_attack_data"}]}}},
+                    "metadata":{"entity_type":"ASSET","interval":{"start_time":now,"end_time":now},"source_type":"DERIVED_CONTEXT","collected_timestamp":now,"product_name":"splunk/attack_data","vendor_name":"Splunk"}}
+        if ip and not ip.startswith(("0.","127.","::1","-")):
+            k = ("ip", ip)
+            if k not in entities:
+                entities[k] = {"entity":{"asset":{"ip":[ip],"attribute":{"labels":[{"key":"source","value":"splunk_attack_data"}]}}},
+                    "metadata":{"entity_type":"ASSET","interval":{"start_time":now,"end_time":now},"source_type":"DERIVED_CONTEXT","collected_timestamp":now,"product_name":"splunk/attack_data","vendor_name":"Splunk"}}
 
-    Path(args.out).write_text(ndjson)
-    print(f"[ok] Wrote {count} entity records → {args.out}")
+    def user(username, domain=""):
+        if not username or username in ("-","SYSTEM","LOCAL SERVICE","NETWORK SERVICE"): return
+        k = ("u", username.lower())
+        if k not in entities:
+            entities[k] = {"entity":{"user":{"user_display_name":username,"attribute":{"labels":[{"key":"domain","value":domain},{"key":"source","value":"splunk_attack_data"}]}}},
+                "metadata":{"entity_type":"USER","interval":{"start_time":now,"end_time":now},"source_type":"DERIVED_CONTEXT","collected_timestamp":now,"product_name":"splunk/attack_data","vendor_name":"Splunk"}}
+
+    raw = log_file.read_text(errors="replace")
+    if log_type in ("WINDOWS_SYSMON","WINEVTLOG","POWERSHELL"):
+        for m in re.finditer(r"<Computer>([^<]+)</Computer>", raw): asset(hostname=m.group(1).strip())
+        for m in re.finditer(r"<Data Name=['\"]SubjectUserName['\"]>([^<]+)</Data>", raw): user(m.group(1).strip())
+        for m in re.finditer(r"<Data Name=['\"]TargetUserName['\"]>([^<]+)</Data>", raw): user(m.group(1).strip())
+        for m in re.finditer(r"<Data Name=['\"]IpAddress['\"]>([^<]+)</Data>", raw):
+            ip = m.group(1).strip().lstrip("-")
+            if re.match(r"\d+\.\d+\.\d+\.\d+", ip): asset(ip=ip)
+    elif log_type == "CS_EDR":
+        for line in raw.splitlines():
+            try:
+                obj = json.loads(line)
+                if h := obj.get("ComputerName") or obj.get("HostName"): asset(hostname=h)
+                if u := obj.get("UserName") or obj.get("userPrincipalName"): user(u)
+            except: pass
+    elif log_type in ("BRO_JSON","SURICATA_EVE_JSON"):
+        for line in raw.splitlines():
+            try:
+                obj = json.loads(line)
+                for f in ("id.orig_h","src_ip","id.resp_h","dest_ip"):
+                    if ip := obj.get(f): asset(ip=ip)
+            except: pass
+    return "\n".join(json.dumps(v) for v in entities.values())
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--log-file", required=True)
+    p.add_argument("--log-type", required=True)
+    p.add_argument("--out",      required=True)
+    a = p.parse_args()
+    ndjson = extract_entities(Path(a.log_file), a.log_type)
+    count = len(ndjson.splitlines()) if ndjson else 0
+    if not count: print("[warn] No entities extracted"); sys.exit(0)
+    Path(a.out).write_text(ndjson)
+    print(f"[ok] {count} entity records → {a.out}")
 `;
 
-  const entityNdjson = flowSteps.length === 0
-    ? '# Build an attack flow first to preview entity NDJSON'
-    : buildEntityNdjson(flowSteps);
+  const DEPLOY_FILES = [
+    ".github/workflows/logstory-replay.yml",
+    "scripts/replay_dataset.py",
+    "scripts/extract_entities.py",
+    "requirements.txt",
+    "README.md",
+  ];
 
-  const secretCmds = tenants.length === 0 ? "# Add tenants first" :
-    tenants.flatMap(t => {
-      const s = t.name.toUpperCase().replace(/[^A-Z0-9]/g,"_");
-      return [
-        `# ${t.label||t.name} (${t.region})`,
-        `gh secret set SECOPS_CUSTOMER_ID_${s} --body "${t.customerId||"REPLACE_WITH_UUID"}"`,
-        `gh secret set SECOPS_CREDENTIALS_${s} < /path/to/${t.name}-service-account.json`,
-        "",
-      ];
-    }).join("\n");
-
-  const urlList = flowSteps.length === 0 ? "# Build an attack flow first" :
-    flowSteps.map(s => `# ${s.name} [${s.technique}] → ${s.lt}\ncurl -fsSL "${s.mediaUrl}" -o /tmp/${s.name}.log`).join("\n\n");
-
-  const tabs = [
-    ["workflow", ".github/workflows/logstory-replay.yml"],
-    ["replay",   "scripts/replay_dataset.py"],
-    ["entities", "ENTITIES/ NDJSON preview"],
-    ["extract",  "scripts/extract_entities.py"],
-    ["secrets",  "gh secret commands"],
-    ["urls",     "dataset URLs (curl)"],
+  const codeViews = [
+    ["workflow", ".github/workflows/logstory-replay.yml", workflow],
+    ["replay",   "scripts/replay_dataset.py",             replayScript],
+    ["extract",  "scripts/extract_entities.py",           entityExtractStandalone],
+    ["secrets",  "gh secret commands",                    secretCmds],
   ];
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+
       {!ready && (
         <div style={{ padding:"12px 16px", background:"#1a0f00", border:"1px solid #f59e0b28",
           borderRadius:8, ...mono, fontSize:11, color:"#f59e0b" }}>
-          ⚠ {!tenants.length&&"Add at least one tenant. "}
-          {!flowSteps.length&&"Build an attack flow with at least one step."}
+          ⚠ {!tenants.length && "Add at least one tenant in Config. "}
+          {!flowSteps.length && "Build an attack flow first."}
         </div>
       )}
 
-      {/* ── Push to Repo panel ───────────────────────────────────────────── */}
+      {/* ── Push panel ──────────────────────────────────────────────────── */}
       <Card style={{ padding:"16px 20px" }}>
-        <SectionLabel>PUSH TO GITHUB REPO</SectionLabel>
-        <div style={{...sans, fontSize:11, color:"#3d5a7a", marginBottom:14, lineHeight:1.6}}>
-          Commit the generated workflow and scripts directly to your runner repo. Requires a GitHub token with
-          <code style={{...mono, fontSize:10, color:"#22d3ee", margin:"0 4px"}}>repo</code>+
-          <code style={{...mono, fontSize:10, color:"#22d3ee", margin:"0 4px"}}>workflow</code> scopes.
-        </div>
-
-        {/* repo input + push button */}
-        <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:14 }}>
-          <div style={{ flex:1 }}>
-            <div style={{...mono, fontSize:9, color:"#1e3a5f", marginBottom:4}}>TARGET REPO</div>
-            <input value={pushRepo} onChange={e=>setPushRepo(e.target.value)}
-              placeholder="owner/repo  e.g. keith-manville/demo-data"
-              style={{ width:"100%", background:"#030a17", border:"1px solid #0c1e38",
-                borderRadius:6, padding:"8px 10px", color:"#c8d8f0", ...mono, fontSize:11,
-                outline:"none", boxSizing:"border-box" }}/>
-          </div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14 }}>
           <div>
-            <div style={{...mono, fontSize:9, color:"#030a17", marginBottom:4}}>⠀</div>
-            <button onClick={handlePush} disabled={pushState==="pushing"}
-              style={{ padding:"8px 20px", borderRadius:6, border:"none", cursor:"pointer",
-                background: pushState==="pushing" ? "#0c1e38" :
-                            pushState==="done"    ? "#065f46" :
-                            pushState==="error"   ? "#7f1d1d" : "#1d4ed8",
-                color: pushState==="pushing" ? "#3d5a7a" : "#e2f0ff",
-                ...mono, fontSize:11, fontWeight:700, whiteSpace:"nowrap",
-                opacity: pushState==="pushing" ? 0.7 : 1 }}>
-              {pushState==="pushing" ? "⏳ Pushing…" :
-               pushState==="done"    ? "✅ Pushed" :
-               pushState==="error"   ? "❌ Retry" : "⬆ Push to Repo"}
-            </button>
+            <SectionLabel>PUSH TO REPO</SectionLabel>
+            <div style={{...sans, fontSize:11, color:"#3d5a7a", marginTop:4 }}>
+              Commits generated workflow + scripts to your runner repo. Token needs
+              <code style={{...mono, fontSize:10, color:"#22d3ee", margin:"0 4px"}}>repo</code>+
+              <code style={{...mono, fontSize:10, color:"#22d3ee"}}>workflow</code> scopes.
+            </div>
           </div>
-          {pushState !== "idle" && (
-            <div>
-              <div style={{...mono, fontSize:9, color:"#030a17", marginBottom:4}}>⠀</div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={handlePush} disabled={pushState==="pushing"}
+              style={{ padding:"8px 18px", borderRadius:6, border:"none", cursor:"pointer",
+                background: pushState==="pushing"?"#0c1e38": pushState==="done"?"#065f46": pushState==="error"?"#7f1d1d":"#1d4ed8",
+                color: pushState==="pushing"?"#3d5a7a":"#e2f0ff",
+                ...mono, fontSize:11, fontWeight:700,
+                opacity: pushState==="pushing"?0.7:1 }}>
+              {pushState==="pushing"?"⏳ Pushing…": pushState==="done"?"✅ Pushed": pushState==="error"?"❌ Retry":"⬆ Push to Repo"}
+            </button>
+            {pushState !== "idle" && (
               <button onClick={()=>{setPushState("idle");setPushLog([]);}}
                 style={{ padding:"8px 12px", borderRadius:6, border:"1px solid #0c1e38",
                   background:"transparent", color:"#3d5a7a", ...mono, fontSize:10, cursor:"pointer" }}>reset</button>
-            </div>
-          )}
-        </div>
-
-        {/* files that will be pushed */}
-        <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom: pushLog.length ? 12 : 0 }}>
-          {[
-            ".github/workflows/logstory-replay.yml",
-            "scripts/replay_dataset.py",
-            "scripts/extract_entities.py",
-            "requirements.txt",
-            "README.md",
-          ].map(f => (
-            <div key={f} style={{ padding:"3px 8px", borderRadius:4, background:"#060f20",
-              border:"1px solid #0c1e38", ...mono, fontSize:9, color:"#3d5a7a" }}>
-              {pushState==="done" ? <span style={{color:"#10b981"}}>✓ </span>
-               : pushState==="pushing" ? <span style={{color:"#f59e0b"}}>⏳ </span>
-               : <span style={{color:"#1e3a5f"}}>○ </span>}
-              {f}
-            </div>
-          ))}
-        </div>
-
-        {/* push log */}
-        {pushLog.length > 0 && (
-          <div style={{ marginTop:8, padding:"10px 12px", background:"#030a17",
-            border:"1px solid #0c1e38", borderRadius:6, maxHeight:180, overflowY:"auto" }}>
-            {pushLog.map((line,i) => (
-              <div key={i} style={{...mono, fontSize:10, lineHeight:1.7,
-                color: line.startsWith("✓") ? "#10b981"
-                     : line.startsWith("✗") || line.startsWith("❌") ? "#ef4444"
-                     : line.startsWith("✅") ? "#10b981"
-                     : line.startsWith("──") ? "#22d3ee"
-                     : "#3d5a7a" }}>
-                {line || " "}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* token warning */}
-        {!ghToken && (
-          <div style={{ marginTop:10, padding:"8px 12px", background:"#1a0f00",
-            border:"1px solid #f59e0b28", borderRadius:6, ...mono, fontSize:10, color:"#f59e0b" }}>
-            ⚠ No GitHub token configured — go to the <strong>Datasets</strong> tab to add one.
-          </div>
-        )}
-      </Card>
-
-      {/* Architecture summary */}
-      <Card style={{ padding:"14px 16px" }}>
-        <SectionLabel>INGESTION ARCHITECTURE</SectionLabel>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
-          {[
-            {icon:"🚫", label:"No git clone",     desc:"splunk/attack_data not checked out. No 9 GB repo, no LFS."},
-            {icon:"⬇️", label:"curl on demand",   desc:"Selected dataset files downloaded via HTTPS at runtime only."},
-            {icon:"💾", label:"Actions cache",     desc:"Files cached by flow hash — no redundant downloads."},
-            {icon:"🧬", label:"Entity pass",       desc:"Pass 2 extracts hostnames/users/IPs → UDM NDJSON → logstory --entities."},
-          ].map(item=>(
-            <div key={item.label} style={{ padding:"12px", background:"#030a17", borderRadius:8, border:"1px solid #0c1e38" }}>
-              <div style={{ fontSize:16, marginBottom:6 }}>{item.icon}</div>
-              <div style={{...sans, fontSize:11, fontWeight:700, color:"#c8d8f0", marginBottom:4 }}>{item.label}</div>
-              <div style={{...sans, fontSize:10, color:"#2a4060" }}>{item.desc}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Pipeline diagram */}
-        <div style={{ marginTop:14, padding:"12px 14px", background:"#030a17",
-          borderRadius:8, border:"1px solid #0c1e38" }}>
-          <div style={{...mono, fontSize:9, color:"#1e3a5f", marginBottom:8 }}>TWO-PASS PIPELINE PER DATASET STEP</div>
-          <div style={{ display:"flex", alignItems:"center", gap:0, flexWrap:"wrap", rowGap:6 }}>
-            {[
-              {label:"curl download",     color:"#3b82f6", sub:"media.githubusercontent.com"},
-              {label:"→", plain:true},
-              {label:"Pass 1: Events",    color:"#10b981", sub:"logstory replay usecase …"},
-              {label:"→", plain:true},
-              {label:"extract_entities()",color:"#a855f7", sub:"parse XML/JSON log → UDM NDJSON"},
-              {label:"→", plain:true},
-              {label:"Pass 2: Entities",  color:"#ec4899", sub:"logstory replay … --entities"},
-              {label:"→", plain:true},
-              {label:"SecOps tenant",     color:"#22d3ee", sub:"events + entity context ingested"},
-            ].map((s,i) => s.plain
-              ? <span key={i} style={{ color:"#1e3a5f", margin:"0 4px", fontSize:14 }}>›</span>
-              : <div key={i} style={{ padding:"6px 10px", borderRadius:6,
-                  background:`${s.color}12`, border:`1px solid ${s.color}30` }}>
-                  <div style={{...mono, fontSize:10, color:s.color, fontWeight:600 }}>{s.label}</div>
-                  <div style={{...mono, fontSize:8, color:"#1e3a5f", marginTop:2 }}>{s.sub}</div>
-                </div>
             )}
           </div>
         </div>
-      </Card>
 
-      {/* tab selector */}
-      <div style={{ display:"flex", gap:2, background:"#030a17", borderRadius:6, padding:3, border:"1px solid #0c1e38", flexWrap:"wrap" }}>
-        {tabs.map(([k,l])=>(
-          <button key={k} onClick={()=>setView(k)}
-            style={{ flex:1, minWidth:100, padding:"7px 4px", borderRadius:5,
-              background:view===k?"#060f20":"transparent", border:"none",
-              color:view===k?"#22d3ee":"#3d5a7a",
-              ...mono, fontSize:9, cursor:"pointer", whiteSpace:"nowrap" }}>{l}</button>
-        ))}
-      </div>
-
-      {view==="workflow" && <CodeBlock code={workflow}              maxH="560px" filename=".github/workflows/logstory-replay.yml"/>}
-      {view==="replay"   && <CodeBlock code={replayScript}         maxH="560px" filename="scripts/replay_dataset.py"/>}
-      {view==="extract"  && <CodeBlock code={entityExtractStandalone} maxH="400px" filename="scripts/extract_entities.py"/>}
-
-      {view==="entities" && (
-        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-          {/* explainer */}
-          <div style={{ padding:"12px 16px", background:"#0d0920", border:"1px solid #a855f730",
-            borderRadius:8 }}>
-            <div style={{...sans, fontSize:13, fontWeight:700, color:"#c8d8f0", marginBottom:6 }}>
-              What is entity ingestion?
-            </div>
-            <div style={{...sans, fontSize:11, color:"#4a6a8a", lineHeight:1.6 }}>
-              Logstory usecases can contain an <code style={{...mono, color:"#a855f7", fontSize:10}}>ENTITIES/</code> folder
-              alongside <code style={{...mono, color:"#3b82f6", fontSize:10}}>EVENTS/</code>.
-              When you run <code style={{...mono, color:"#22d3ee", fontSize:10}}>logstory replay usecase … --entities</code>,
-              it sends each NDJSON record to the SecOps <strong style={{color:"#c8d8f0"}}>ImportEntities</strong> API
-              (<code style={{...mono, fontSize:9, color:"#4a6a8a"}}>v2/entities:batchCreate</code>).
-              This populates the <strong style={{color:"#c8d8f0"}}>Entity Graph</strong> with asset/user context that enriches
-              events — e.g. "ar-win-dc is a Domain Controller" — making it visible in the Asset View and queryable in UDM search.
-            </div>
+        <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:12 }}>
+          <div style={{ flex:1 }}>
+            <input value={pushRepo} onChange={e=>setPushRepo(e.target.value)}
+              placeholder="owner/repo  e.g. keith-manville/demo-data"
+              style={{ width:"100%", background:"#030a17", border:"1px solid #0c1e38",
+                borderRadius:6, padding:"7px 10px", color:"#c8d8f0", ...mono, fontSize:11,
+                outline:"none", boxSizing:"border-box" }}/>
           </div>
+        </div>
 
-          {/* entity type breakdown */}
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
-            {[
-              {type:"ASSET (hostname)", color:"#3b82f6", icon:"🖥",
-               desc:"asset.hostname — populates Asset View, enables hostname-based enrichment"},
-              {type:"ASSET (ip)",       color:"#22d3ee", icon:"🌐",
-               desc:"asset.ip[] — GeoIP enrichment applied automatically at ingest"},
-              {type:"USER",             color:"#a855f7", icon:"👤",
-               desc:"user.user_display_name — enables identity context on PROCESS_LAUNCH events"},
-            ].map(e=>(
-              <div key={e.type} style={{ padding:"12px", background:"#030a17",
-                borderRadius:8, border:`1px solid ${e.color}22` }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                  <span style={{ fontSize:16 }}>{e.icon}</span>
-                  <span style={{...mono, fontSize:10, color:e.color, fontWeight:700 }}>{e.type}</span>
-                </div>
-                <div style={{...sans, fontSize:10, color:"#2a4060" }}>{e.desc}</div>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom: pushLog.length?12:0 }}>
+          {DEPLOY_FILES.map(f=>(
+            <div key={f} style={{ padding:"3px 8px", borderRadius:4, background:"#060f20",
+              border:"1px solid #0c1e38", ...mono, fontSize:9,
+              color: pushState==="done"?"#10b981": pushState==="pushing"?"#f59e0b":"#3d5a7a" }}>
+              {pushState==="done"?"✓ ": pushState==="pushing"?"⏳ ":"○ "}{f}
+            </div>
+          ))}
+        </div>
+
+        {pushLog.length > 0 && (
+          <div style={{ padding:"10px 12px", background:"#030a17", border:"1px solid #0c1e38",
+            borderRadius:6, maxHeight:160, overflowY:"auto" }}>
+            {pushLog.map((line,i)=>(
+              <div key={i} style={{...mono, fontSize:10, lineHeight:1.7,
+                color: line.startsWith("✓")?"#10b981": line.startsWith("✗")||line.startsWith("❌")?"#ef4444":
+                       line.startsWith("✅")?"#10b981": line.startsWith("──")?"#22d3ee":"#3d5a7a"}}>
+                {line||" "}
               </div>
             ))}
           </div>
+        )}
 
-          {/* stats */}
-          {flowSteps.length > 0 && (() => {
-            const lines = entityNdjson.split("\n").filter(l=>l.trim()&&!l.startsWith("#"));
-            const assets = lines.filter(l=>l.includes('"ASSET"')).length;
-            const users  = lines.filter(l=>l.includes('"USER"')).length;
-            return (
-              <div style={{ display:"flex", gap:10 }}>
-                {[["Total entities",lines.length,"#22d3ee"],["Asset records",assets,"#3b82f6"],["User records",users,"#a855f7"]].map(([l,v,c])=>(
-                  <div key={l} style={{ flex:1, textAlign:"center", padding:"10px",
-                    background:"#030a17", borderRadius:8, border:`1px solid ${c}22` }}>
-                    <div style={{...sans, fontSize:20, fontWeight:800, color:c }}>{v}</div>
-                    <div style={{...mono, fontSize:9, color:"#1e3a5f" }}>{l.toUpperCase()}</div>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
-
-          <CodeBlock code={entityNdjson} maxH="380px" filename="ENTITIES/WINDOWS_SYSMON.ndjson (preview)"/>
-
-          <div style={{ padding:"10px 14px", background:"#030a17", border:"1px solid #0c1e38",
-            borderRadius:8, ...mono, fontSize:10, color:"#1e3a5f" }}>
-            ℹ In production, <span style={{color:"#a855f7"}}>extract_entities()</span> in replay_dataset.py
-            parses the actual downloaded log file using regex/JSON — so entity values come from real telemetry,
-            not from static metadata. Processes and file hashes are event-level data and are NOT sent as entities
-            (they enrich at query time from events, not from the entity graph).
+        {!ghToken && (
+          <div style={{ marginTop:10, padding:"8px 12px", background:"#1a0f00",
+            border:"1px solid #f59e0b28", borderRadius:6, ...mono, fontSize:10, color:"#f59e0b" }}>
+            ⚠ No GitHub token — add it in the Config tab.
           </div>
-        </div>
-      )}
+        )}
+      </Card>
 
-      {view==="secrets" && (
-        <div>
-          <div style={{...mono, fontSize:10, color:"#1e3a5f", marginBottom:8 }}>
-            Run these commands in your repo with the GitHub CLI
-          </div>
-          <CodeBlock code={secretCmds} maxH="300px" filename="gh secret setup"/>
-          {tenants.length > 0 && (
-            <div style={{ marginTop:12, display:"flex", flexDirection:"column", gap:8 }}>
-              {tenants.map((t,i) => {
-                const s = t.name.toUpperCase().replace(/[^A-Z0-9]/g,"_");
-                return (
-                  <Card key={i} style={{ padding:"12px 14px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <div>
-                      <div style={{...sans, fontSize:13, fontWeight:600, color:"#c8d8f0" }}>{t.label||t.name}</div>
-                      <div style={{...mono, fontSize:9, color:"#1e3a5f" }}>{t.region}</div>
-                    </div>
-                    <div style={{ display:"flex", flexDirection:"column", gap:4, alignItems:"flex-end" }}>
-                      <div style={{...mono, fontSize:9}}>
-                        <span style={{color:"#f59e0b"}}>SECOPS_CUSTOMER_ID_{s}</span>
-                        <span style={{color:"#1e3a5f"}}> = {t.customerId?t.customerId.slice(0,16)+"…":"⚠ not set"}</span>
-                      </div>
-                      <div style={{...mono, fontSize:9}}>
-                        <span style={{color:"#f59e0b"}}>SECOPS_CREDENTIALS_{s}</span>
-                        <span style={{color:t.credentials?"#10b981":"#ef4444"}}> = {t.credentials?"✓ provided":"⚠ not set"}</span>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-      {view==="urls" && (
-        <div>
-          <div style={{...mono, fontSize:10, color:"#1e3a5f", marginBottom:8}}>
-            Direct download URLs for your selected datasets — no auth required
-          </div>
-          <CodeBlock code={urlList} maxH="400px" filename="dataset download URLs"/>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── STATUS MONITOR ───────────────────────────────────────────────────────────
-
-function StatusMonitor({ tenants, ghToken, ghRepo, setGhRepo }) {
-  const [runs, setRuns] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [expanded, setExpanded] = useState(null);
-  const [triggering, setTriggering] = useState(false);
-  const [lastFetch, setLastFetch] = useState(null);
-
-  const repoValid = ghRepo && ghRepo.includes("/") && !ghRepo.startsWith("your-");
-
-  const fetchRuns = async () => {
-    if (!repoValid) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const headers = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
-      if (ghToken) headers.Authorization = `Bearer ${ghToken}`;
-      const res = await fetch(
-        `https://api.github.com/repos/${ghRepo}/actions/workflows/logstory-replay.yml/runs?per_page=30`,
-        { headers }
-      );
-      if (!res.ok) throw new Error(`GitHub API ${res.status}: ${res.statusText}`);
-      const data = await res.json();
-      const mapped = (data.workflow_runs || []).map(r => ({
-        id: String(r.id),
-        tenant: r.name || "—",
-        status: r.conclusion === "success" ? "success"
-              : r.conclusion === "failure" ? "failed"
-              : r.status === "in_progress" ? "running"
-              : r.conclusion || r.status || "unknown",
-        startedAt: r.created_at,
-        duration: r.updated_at && r.created_at
-          ? Math.round((new Date(r.updated_at) - new Date(r.created_at)) / 1000)
-          : 0,
-        trigger: r.event === "schedule" ? "schedule" : r.event === "workflow_dispatch" ? "manual" : r.event || "—",
-        url: r.html_url,
-        branch: r.head_branch,
-        actor: r.actor?.login,
-        runNumber: r.run_number,
-      }));
-      setRuns(mapped);
-      setLastFetch(new Date());
-    } catch(e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const triggerRun = async () => {
-    if (!repoValid || !ghToken) return;
-    setTriggering(true);
-    try {
-      const res = await fetch(
-        `https://api.github.com/repos/${ghRepo}/actions/workflows/logstory-replay.yml/dispatches`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${ghToken}`,
-            Accept: "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28"
-          },
-          body: JSON.stringify({ ref: "main" })
-        }
-      );
-      if (!res.ok) throw new Error(`Dispatch failed: ${res.status}`);
-      setTimeout(fetchRuns, 3000);
-    } catch(e) {
-      setError(e.message);
-    } finally {
-      setTriggering(false);
-    }
-  };
-
-  useEffect(() => { if (repoValid) fetchRuns(); }, [ghRepo, ghToken]);
-
-  const fmt = iso => {
-    const d = new Date(iso);
-    return d.toLocaleDateString("en-US",{month:"short",day:"numeric"})
-      + " " + d.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
-  };
-  const fmtBytes = b => b > 1e6 ? `${(b/1e6).toFixed(1)} MB` : b > 1e3 ? `${(b/1e3).toFixed(0)} KB` : `${b} B`;
-
-  const stats = {
-    total: runs.length,
-    success: runs.filter(j=>j.status==="success").length,
-    failed: runs.filter(j=>j.status==="failed").length,
-    running: runs.filter(j=>j.status==="running").length,
-  };
-
-  // Tenant health derived from run names/branches — group by actor or just show per-run
-  // Since GH Actions runs don't inherently tag by tenant, we show per-run health
-  const successRate = runs.length > 0 ? Math.round(stats.success / runs.length * 100) : 0;
-
-  if (!repoValid) return (
-    <Card style={{ padding:24, textAlign:"center" }}>
-      <div style={{...mono, fontSize:12, color:"#f59e0b", marginBottom:12 }}>⚠ Configure your GitHub repo to load real run data</div>
-      <div style={{ maxWidth:340, margin:"0 auto" }}>
-        <Inp label="GitHub repo (owner/repo)" value={ghRepo} onChange={setGhRepo} mono placeholder="keith-manville/demo-data"/>
-      </div>
-      <div style={{...mono, fontSize:10, color:"#1e3a5f", marginTop:10 }}>
-        Set your GitHub token in the Datasets tab for authenticated access (5,000 req/hr).
-      </div>
-    </Card>
-  );
-
-  return (
-    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-
-      {/* header + controls */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{...mono, fontSize:11, color:"#3d5a7a" }}>
-            {ghRepo}
-            {lastFetch && <span style={{ color:"#1e3a5f", marginLeft:8 }}>· fetched {fmt(lastFetch)}</span>}
-          </div>
-        </div>
-        <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={fetchRuns} disabled={loading} variant="secondary" sm>
-            {loading ? "⟳ loading…" : "↻ refresh"}
-          </Btn>
-          <Btn onClick={triggerRun} disabled={triggering || !ghToken} sm>
-            {triggering ? "⟳ dispatching…" : "▶ trigger run"}
-          </Btn>
-        </div>
-      </div>
-
-      {!ghToken && (
-        <div style={{ padding:"10px 14px", background:"#1a0f00", border:"1px solid #f59e0b28",
-          borderRadius:7, ...mono, fontSize:10, color:"#f59e0b" }}>
-          ⓘ Add your GitHub token in the Datasets tab to trigger runs and increase rate limits.
-        </div>
-      )}
-
-      {error && (
-        <div style={{ padding:"10px 14px", background:"#1a0808", border:"1px solid #ef444330",
-          borderRadius:7, ...mono, fontSize:10, color:"#ef4444" }}>
-          ⚠ {error}
-        </div>
-      )}
-
-      {/* stats */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
-        {[
-          {l:"Total Runs", v: loading ? "…" : stats.total, c:"#22d3ee"},
-          {l:"Successful",  v: loading ? "…" : stats.success, c:"#10b981"},
-          {l:"Failed",      v: loading ? "…" : stats.failed,  c:"#ef4444"},
-          {l:"Success Rate",v: loading ? "…" : `${successRate}%`, c: successRate>80?"#10b981":successRate>50?"#f59e0b":"#ef4444"},
-        ].map(s=>(
-          <Card key={s.l} style={{ textAlign:"center", padding:"14px 10px" }}>
-            <div style={{...sans, fontSize:22, fontWeight:800, color:s.c, marginBottom:4 }}>{s.v}</div>
-            <div style={{...mono, fontSize:9, color:"#1e3a5f", letterSpacing:"0.1em" }}>{s.l.toUpperCase()}</div>
-          </Card>
-        ))}
-      </div>
-
-      {/* success rate bar */}
-      {runs.length > 0 && (
-        <Card>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-            <SectionLabel>WORKFLOW HEALTH · {ghRepo}</SectionLabel>
-            <span style={{...mono, fontSize:10, color: successRate>80?"#10b981":successRate>50?"#f59e0b":"#ef4444" }}>{successRate}%</span>
-          </div>
-          <div style={{ height:6, background:"#0c1e38", borderRadius:3, overflow:"hidden" }}>
-            <div style={{ height:"100%", width:`${successRate}%`, transition:"width .6s",
-              background: successRate>80?"#10b981":successRate>50?"#f59e0b":"#ef4444", borderRadius:3 }}/>
-          </div>
-          <div style={{...mono, fontSize:9, color:"#1e3a5f", marginTop:6 }}>
-            {stats.success} succeeded · {stats.failed} failed · {stats.running} in progress · last 30 runs
-          </div>
-        </Card>
-      )}
-
-      {/* run log */}
+      {/* ── Run monitor ─────────────────────────────────────────────────── */}
       <Card>
-        <SectionLabel>RUN LOG — {ghRepo}</SectionLabel>
-        {loading && runs.length === 0 && (
-          <div style={{ padding:"24px 0", textAlign:"center", ...mono, fontSize:11, color:"#1e3a5f" }}>
-            <Spinner/><span style={{ marginLeft:10 }}>Loading workflow runs from GitHub…</span>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+          <div>
+            <SectionLabel>RUN MONITOR</SectionLabel>
+            {lastFetch && <span style={{...mono, fontSize:9, color:"#1e3a5f", marginLeft:8 }}>fetched {fmt(lastFetch)}</span>}
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <Btn onClick={fetchRuns} disabled={loadingRuns} variant="secondary" sm>
+              {loadingRuns?"⟳ loading…":"↻ refresh"}
+            </Btn>
+            <Btn onClick={triggerRun} disabled={triggering||!ghToken} sm>
+              {triggering?"⟳ dispatching…":"▶ trigger run"}
+            </Btn>
+          </div>
+        </div>
+
+        {runError && (
+          <div style={{ padding:"8px 12px", background:"#1a0808", border:"1px solid #ef444330",
+            borderRadius:6, ...mono, fontSize:10, color:"#ef4444", marginBottom:10 }}>⚠ {runError}</div>
+        )}
+
+        {runs.length > 0 && (
+          <>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:12 }}>
+              {[{l:"Total",v:stats.total,c:"#22d3ee"},{l:"Success",v:stats.success,c:"#10b981"},
+                {l:"Failed",v:stats.failed,c:"#ef4444"},{l:"Rate",v:`${successRate}%`,c:successRate>80?"#10b981":successRate>50?"#f59e0b":"#ef4444"}
+              ].map(s=>(
+                <div key={s.l} style={{ textAlign:"center", padding:"10px 8px", background:"#030a17",
+                  border:"1px solid #0c1e38", borderRadius:6 }}>
+                  <div style={{...sans, fontSize:20, fontWeight:800, color:s.c}}>{s.v}</div>
+                  <div style={{...mono, fontSize:8, color:"#1e3a5f", marginTop:2}}>{s.l.toUpperCase()}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ height:4, background:"#0c1e38", borderRadius:2, overflow:"hidden", marginBottom:12 }}>
+              <div style={{ height:"100%", width:`${successRate}%`, transition:"width .6s",
+                background:successRate>80?"#10b981":successRate>50?"#f59e0b":"#ef4444", borderRadius:2 }}/>
+            </div>
+          </>
+        )}
+
+        {loadingRuns && runs.length===0 && (
+          <div style={{ padding:"20px 0", textAlign:"center", ...mono, fontSize:11, color:"#1e3a5f" }}>
+            <Spinner/><span style={{ marginLeft:10 }}>Loading runs from GitHub…</span>
           </div>
         )}
-        {!loading && runs.length === 0 && !error && (
-          <div style={{ padding:"24px 0", textAlign:"center", ...mono, fontSize:11, color:"#1e3a5f" }}>
-            No runs found for <code style={{ color:"#22d3ee" }}>logstory-replay.yml</code> in {ghRepo}
+        {!loadingRuns && runs.length===0 && !runError && (
+          <div style={{ padding:"20px 0", textAlign:"center", ...mono, fontSize:11, color:"#1e3a5f" }}>
+            No runs found for <code style={{ color:"#22d3ee" }}>logstory-replay.yml</code> in {pushRepo||ghRepo}
           </div>
         )}
-        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
           {runs.map(j=>(
             <div key={j.id}>
-              <div onClick={()=>setExpanded(expanded===j.id?null:j.id)}
+              <div onClick={()=>setExpandedRun(expandedRun===j.id?null:j.id)}
                 style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
-                  padding:"10px 12px", borderRadius:7, cursor:"pointer",
-                  background:expanded===j.id?"#060f20":"#040c1a",
+                  padding:"9px 12px", borderRadius:6, cursor:"pointer",
+                  background:expandedRun===j.id?"#060f20":"#040c1a",
                   border:`1px solid ${j.status==="failed"?"#ef444330":j.status==="running"?"#22d3ee30":"#0c1e38"}`,
                   transition:"all .15s" }}>
-                <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                   <Dot status={j.status}/>
                   <div>
-                    <div style={{...mono, fontSize:12, color:"#c8d8f0", fontWeight:600 }}>
-                      run #{j.runNumber}
-                      {j.actor && <span style={{ color:"#3d5a7a", fontWeight:400 }}> · {j.actor}</span>}
-                    </div>
-                    <div style={{...mono, fontSize:9, color:"#1e3a5f" }}>{fmt(j.startedAt)}</div>
+                    <span style={{...mono, fontSize:11, color:"#c8d8f0", fontWeight:600}}>run #{j.runNumber}</span>
+                    {j.actor && <span style={{...mono, fontSize:10, color:"#3d5a7a"}}> · {j.actor}</span>}
+                    <div style={{...mono, fontSize:9, color:"#1e3a5f"}}>{fmt(j.startedAt)}</div>
                   </div>
                 </div>
-                <div style={{ display:"flex", gap:7, alignItems:"center" }}>
+                <div style={{ display:"flex", gap:6, alignItems:"center" }}>
                   <Pill label={j.trigger} color="#3d5a7a" sm/>
                   {j.branch && <Pill label={j.branch} color="#22d3ee" sm/>}
-                  {j.duration > 0 && <span style={{...mono, fontSize:9, color:"#1e3a5f" }}>{j.duration}s</span>}
-                  <Pill label={j.status} color={j.status==="success"?"#10b981":j.status==="failed"?"#ef4444":j.status==="running"?"#22d3ee":"#475569"} sm/>
-                  <span style={{ color:"#1e3a5f", fontSize:10 }}>{expanded===j.id?"▲":"▼"}</span>
+                  {j.duration>0 && <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{j.duration}s</span>}
+                  <Pill label={j.status}
+                    color={j.status==="success"?"#10b981":j.status==="failed"?"#ef4444":j.status==="running"?"#22d3ee":"#475569"} sm/>
+                  <span style={{ color:"#1e3a5f", fontSize:10 }}>{expandedRun===j.id?"▲":"▼"}</span>
                 </div>
               </div>
-              {expanded===j.id && (
-                <div style={{ padding:"12px 14px", background:"#030a17",
-                  borderLeft:"3px solid #0c1e38", marginBottom:2 }}>
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:10 }}>
-                    {[["Run #",j.runNumber],["Trigger",j.trigger],["Branch",j.branch||"—"],
-                      ["Actor",j.actor||"—"],["Started",fmt(j.startedAt)],["Status",j.status],
-                      ["Duration",j.duration>0?`${j.duration}s`:"—"],["Run ID",j.id]
+              {expandedRun===j.id && (
+                <div style={{ padding:"10px 14px", background:"#030a17",
+                  borderLeft:"3px solid #0c1e38", marginBottom:2, animation:"slideUp .15s" }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
+                    {[["Run #",j.runNumber],["Trigger",j.trigger],["Branch",j.branch||"—"],["Actor",j.actor||"—"],
+                      ["Started",fmt(j.startedAt)],["Status",j.status],["Duration",j.duration>0?`${j.duration}s`:"—"],["ID",j.id]
                     ].map(([k,v])=>(
                       <div key={k}>
-                        <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:2 }}>{k.toUpperCase()}</div>
-                        <div style={{...mono, fontSize:10, color:"#6a8aaa" }}>{String(v)}</div>
+                        <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:2}}>{k.toUpperCase()}</div>
+                        <div style={{...mono, fontSize:10, color:"#6a8aaa"}}>{String(v)}</div>
                       </div>
                     ))}
                   </div>
-                  {j.url && (
-                    <a href={j.url} target="_blank" rel="noopener noreferrer"
-                      style={{...mono, fontSize:10, color:"#22d3ee", textDecoration:"none" }}>
-                      → view on GitHub ↗
-                    </a>
-                  )}
+                  {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer"
+                    style={{...mono, fontSize:10, color:"#22d3ee", textDecoration:"none", display:"block", marginTop:8}}>
+                    → view on GitHub ↗</a>}
                 </div>
               )}
             </div>
@@ -2285,17 +1806,28 @@ function StatusMonitor({ tenants, ghToken, ghRepo, setGhRepo }) {
         </div>
       </Card>
 
-      {/* repo input */}
+      {/* ── Generated code viewer ────────────────────────────────────────── */}
       <Card>
-        <SectionLabel>REPO SETTINGS</SectionLabel>
-        <Inp label="GitHub repo (owner/repo)" value={ghRepo} onChange={setGhRepo} mono placeholder="keith-manville/demo-data"/>
-        <div style={{...mono, fontSize:10, color:"#1e3a5f", marginTop:8 }}>
-          Fetches <code style={{ color:"#22d3ee" }}>logstory-replay.yml</code> workflow runs. Set your GitHub token in the Datasets tab.
+        <SectionLabel>GENERATED FILES</SectionLabel>
+        <div style={{ display:"flex", gap:2, background:"#030a17", borderRadius:6, padding:3,
+          border:"1px solid #0c1e38", marginBottom:12, flexWrap:"wrap" }}>
+          {codeViews.map(([k,l])=>(
+            <button key={k} onClick={()=>setView(k)}
+              style={{ flex:1, minWidth:100, padding:"6px 4px", borderRadius:5,
+                background:view===k?"#060f20":"transparent", border:"none",
+                color:view===k?"#22d3ee":"#3d5a7a",
+                ...mono, fontSize:9, cursor:"pointer", whiteSpace:"nowrap" }}>{l}</button>
+          ))}
         </div>
+        {codeViews.map(([k,,code])=> view===k &&
+          <CodeBlock key={k} code={code} maxH="480px" filename={codeViews.find(c=>c[0]===k)[1]}/>
+        )}
       </Card>
     </div>
   );
 }
+
+// ─── THREAT INTEL TAB ────────────────────────────────────────────────────────
 
 // ─── THREAT INTEL TAB ────────────────────────────────────────────────────────
 // GTI API (VirusTotal Enterprise) — uses /api/v3 endpoints
@@ -2329,19 +1861,15 @@ const KNOWN_ACTORS = [
 
 
 const TABS = [
-  {id:"flow",     icon:"⛓", label:"Attack Flow"},
-  {id:"tenants",  icon:"🏢", label:"Tenants"},
-  {id:"schedule", icon:"⏰", label:"Schedule"},
-  {id:"generate", icon:"⚙️", label:"Generate"},
-  {id:"status",   icon:"📡", label:"Status"},
+  {id:"flow",   icon:"⛓", label:"Attack Flow"},
+  {id:"config", icon:"⚙️", label:"Config"},
+  {id:"deploy", icon:"🚀", label:"Deploy"},
 ];
 
 const PAGE_META = {
-  flow:     ["Attack Flow Builder",   "Build an attack sequence from real Splunk datasets — browse techniques inline, drag to reorder, apply templates, export as JSON"],
-  tenants:  ["SecOps Tenants",        "Configure multi-tenant credentials — each tenant becomes a GitHub Actions matrix job"],
-  schedule: ["Schedule & Timing",     "GitHub Actions cron schedule and logstory timestamp delta settings"],
-  generate: ["Generate Artifacts",    "Export GitHub Actions workflow (HTTPS pull architecture), Python replay script, and GitHub CLI secret commands"],
-  status:   ["Status & Monitoring",   "Monitor replay jobs, tenant health, and ingestion volume"],
+  flow:   ["Attack Flow",  "Browse Splunk attack_data techniques, build a replay sequence, export as JSON"],
+  config: ["Config",       "Tenants · schedule · timestamp delta · GitHub token and repo"],
+  deploy: ["Deploy",       "Push workflow + scripts to GitHub, trigger runs, monitor status"],
 };
 
 export default function App() {
@@ -2354,9 +1882,9 @@ export default function App() {
   const [ghRepo, setGhRepo]       = useState("keith-manville/demo-data");
 
   const badges = {
-    flow: flowSteps.length, datasets: 0,
-    tenants: tenants.length,
-    schedule: 0, generate: 0, status: 0,
+    flow:   flowSteps.length,
+    config: tenants.length,
+    deploy: 0,
   };
 
   const [title, sub] = PAGE_META[tab];
@@ -2426,11 +1954,9 @@ export default function App() {
           <div style={{...mono, fontSize:11, color:"#1e3a5f" }}>{sub}</div>
         </div>
 
-        {tab==="flow"     && <FlowBuilder flowSteps={flowSteps} setFlowSteps={setFlowSteps} ghToken={ghToken} setGhToken={setGhToken}/>}
-        {tab==="tenants"  && <TenantManager tenants={tenants} setTenants={setTenants}/>}
-        {tab==="schedule" && <ScheduleBuilder schedule={schedule} setSchedule={setSchedule} delta={delta} setDelta={setDelta}/>}
-        {tab==="generate" && <GenerateTab tenants={tenants} flowSteps={flowSteps} schedule={schedule} delta={delta} ghToken={ghToken} ghRepo={ghRepo} setGhRepo={setGhRepo}/>}
-        {tab==="status"   && <StatusMonitor tenants={tenants} ghToken={ghToken} ghRepo={ghRepo} setGhRepo={setGhRepo}/>}
+        {tab==="flow"   && <FlowBuilder flowSteps={flowSteps} setFlowSteps={setFlowSteps} ghToken={ghToken} setGhToken={setGhToken}/>}
+        {tab==="config" && <ConfigTab tenants={tenants} setTenants={setTenants} schedule={schedule} setSchedule={setSchedule} delta={delta} setDelta={setDelta} ghToken={ghToken} setGhToken={setGhToken} ghRepo={ghRepo} setGhRepo={setGhRepo}/>}
+        {tab==="deploy" && <DeployTab tenants={tenants} flowSteps={flowSteps} schedule={schedule} delta={delta} ghToken={ghToken} ghRepo={ghRepo} setGhRepo={setGhRepo}/>}
       </div>
 
       {/* footer */}
