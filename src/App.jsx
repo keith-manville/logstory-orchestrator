@@ -515,549 +515,353 @@ async function fetchYamlsForTechnique(technique, token) {
   return datasets;
 }
 
-// ─── DATASET BROWSER ──────────────────────────────────────────────────────────
+// ─── KILL CHAIN CANVAS ────────────────────────────────────────────────────────
 
-function FlowBuilder({ flowSteps, setFlowSteps, ghToken, setGhToken }) {
-  // ── Dataset browser state ──────────────────────────────────────────────────
-  const [techniques, setTechniques]   = useState([]);
-  const [loadingFolders, setLoadingFolders] = useState(false);
-  const [folderError, setFolderError] = useState(null);
-  const [repoIndex, setRepoIndex]     = useState(null); // cross-ref: tactic↔logtype↔technique
-  const [search, setSearch]           = useState("");
-  const [tacticFilter, setTacticFilter] = useState("all");
-  const [logTypeFilter, setLogTypeFilter] = useState("all");
-  const [expanded, setExpanded]       = useState(null);
-  const [techDatasets, setTechDatasets] = useState({});
-  const [loadingTech, setLoadingTech] = useState(null);
-  const [tokenInput, setTokenInput]   = useState(ghToken);
-  const [showTokenForm, setShowTokenForm] = useState(false);
-  const [browserOpen, setBrowserOpen] = useState(false);
+const TACTIC_ORDER = [
+  "Reconnaissance","Resource Development","Initial Access","Execution",
+  "Persistence","Privilege Escalation","Defense Evasion","Credential Access",
+  "Discovery","Lateral Movement","Collection","Command and Control",
+  "Exfiltration","Impact",
+];
 
-  // ── Flow builder state ─────────────────────────────────────────────────────
-  const [opName, setOpName]           = useState("Operation Chimera");
-  const [opDesc, setOpDesc]           = useState("");
-  const [openStep, setOpenStep]       = useState(null);
-  const [swapStep, setSwapStep]       = useState(null);
-  const [swapVariants, setSwapVariants] = useState({});
-  const [loadingSwap, setLoadingSwap] = useState(null);
+const TACTIC_SHORT = {
+  "Reconnaissance":"RECON","Resource Development":"RESOURCE DEV",
+  "Initial Access":"INIT ACCESS","Execution":"EXEC",
+  "Persistence":"PERSIST","Privilege Escalation":"PRIV ESC",
+  "Defense Evasion":"DEF EVASION","Credential Access":"CRED ACCESS",
+  "Discovery":"DISCOVERY","Lateral Movement":"LAT MOVE",
+  "Collection":"COLLECT","Command and Control":"C2",
+  "Exfiltration":"EXFIL","Impact":"IMPACT",
+};
 
-  // ── Dataset browser logic ──────────────────────────────────────────────────
-  const loadFolders = async (tok) => {
-    setLoadingFolders(true); setFolderError(null);
-    const token = tok || ghToken;
+// ── Small TTP node on the canvas ──────────────────────────────────────────────
+function ChainNode({ step, index, total, onRemove, onMoveLeft, onMoveRight, onSwapDataset, repoIndex }) {
+  const [expanded, setExpanded] = useState(false);
+  const [swapping, setSwapping]   = useState(false);
+  const [altDatasets, setAltDatasets] = useState([]);
+  const tactic = getTactic(step.technique);
+  const color  = tacticColor(step.technique);
+
+  async function loadAlts() {
+    setSwapping(true);
     try {
-      const folders = await fetchTechniqueFolders(token);
-      setTechniques(folders);
-      // Fire index fetch in background — doesn't block the folder list
-      fetchRepoIndex(token).then(idx => setRepoIndex(idx)).catch(() => {});
-    } catch(e) { setFolderError(e.message); }
-    finally { setLoadingFolders(false); }
-  };
-
-  useEffect(() => { loadFolders(); }, []);
-
-  const expandTechnique = async (tech) => {
-    if (expanded === tech) { setExpanded(null); return; }
-    setExpanded(tech);
-    if (techDatasets[tech]) return;
-    setLoadingTech(tech);
-    try {
-      const ds = await fetchYamlsForTechnique(tech, ghToken);
-      setTechDatasets(prev => ({...prev, [tech]: ds}));
-    } catch(e) {}
-    setLoadingTech(null);
-  };
-
-  const addToFlow   = (ds) => setFlowSteps(prev => prev.find(s => s.id === ds.id) ? prev : [...prev, ds]);
-  const isInFlow    = (ds) => flowSteps.some(s => s.id === ds.id);
-
-  // ── Filter options derived from repoIndex (populated after background fetch) ─
-  // Log types available for the current tactic selection (or all if no tactic)
-  const availableLogTypes = (() => {
-    if (!repoIndex) return ["all", ...Array.from(SECOPS_LOG_TYPES).sort()];
-    if (tacticFilter === "all") {
-      return ["all", ...Array.from(
-        new Set(Object.values(repoIndex.byLogType).flatMap(s => [...s]).length > 0
-          ? Object.keys(repoIndex.byLogType)
-          : SECOPS_LOG_TYPES)
-      ).sort()];
-    }
-    // Only log types that actually have datasets for this tactic
-    const lts = repoIndex.tacticLogTypes[tacticFilter];
-    return ["all", ...(lts ? [...lts].sort() : Array.from(SECOPS_LOG_TYPES).sort())];
-  })();
-
-  // Tactics available for the current log type selection (or all if no log type)
-  const availableTactics = (() => {
-    if (!repoIndex || logTypeFilter === "all") return ["all", ...Object.keys(TACTIC_COLORS)];
-    // Which techniques have this log type?
-    const techs = repoIndex.byLogType[logTypeFilter] || new Set();
-    // Which tactics do those techniques belong to?
-    const tactics = new Set([...techs].map(t => getTactic(t)).filter(Boolean));
-    return ["all", ...Object.keys(TACTIC_COLORS).filter(t => tactics.has(t))];
-  })();
-
-  // Filter techniques using repoIndex for cross-filter, falling back to techDatasets for loaded ones
-  const filteredTechs = techniques.filter(t => {
-    const matchSearch = !search || t.toLowerCase().includes(search.toLowerCase());
-    const matchTactic = tacticFilter === "all" || getTactic(t) === tacticFilter;
-    const matchLogType = logTypeFilter === "all" || (() => {
-      // If we have the index, use it
-      if (repoIndex) return (repoIndex.byTechnique[t] || new Set()).has(logTypeFilter);
-      // Fall back to lazily-loaded data
-      if (techDatasets[t]) return techDatasets[t].some(d => d.lt === logTypeFilter);
-      return true; // unloaded, show optimistically
-    })();
-    return matchSearch && matchTactic && matchLogType;
-  });
-
-  // Stats for loaded datasets
-  const allLoadedDs = Object.values(techDatasets).flat();
-  const mappedCount = allLoadedDs.filter(d => SECOPS_LOG_TYPES.has(d.lt)).length;
-  const unmappedCount = allLoadedDs.length - mappedCount;
-
-  // ── Flow builder logic ─────────────────────────────────────────────────────
-  const openSwap = async (s) => {
-    if (swapStep === s.id) { setSwapStep(null); return; }
-    setSwapStep(s.id); setOpenStep(null);
-    if (swapVariants[s.id]) return;
-    setLoadingSwap(s.id);
-    try {
-      const candidates = [...new Set([s.technique, s.technique?.split(".")[0]])].filter(Boolean);
-      let all = [];
-      for (const cand of candidates) {
-        const ds = await fetchYamlsForTechnique(cand, ghToken);
-        all = [...all, ...ds];
-      }
-      const seen = new Set(); const deduped = [];
-      all.forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); deduped.push(d); } });
-      setSwapVariants(prev => ({...prev, [s.id]: deduped}));
-    } catch {}
-    setLoadingSwap(null);
-  };
-
-  const swapVariant = (stepId, newDs) => {
-    setFlowSteps(prev => prev.map(s => s.id === stepId ? {...newDs, id: stepId} : s));
-    setSwapStep(null);
-  };
-
-  const tacticCoverage = {};
-  flowSteps.forEach(s => (s.mitre||[]).forEach(m => {
-    const t = getTactic(m); tacticCoverage[t] = (tacticCoverage[t]||0)+1;
-  }));
-
-  const exportFlow = () => JSON.stringify({
-    name: opName, description: opDesc,
-    created: new Date().toISOString(),
-    ingestion_method: "https_pull",
-    media_base_url: RAW_BASE,
-    steps: flowSteps.map((s,i) => ({
-      step: i+1, name: s.name, technique: s.technique,
-      mitre: s.mitre, tactic: (s.mitre||[]).map(getTactic),
-      log_type: s.lt, media_url: s.mediaUrl,
-      source: s.source, sourcetype: s.sourcetype,
-    }))
-  }, null, 2);
+      const datasets = await fetchYamlsForTechnique(step.technique, "");
+      setAltDatasets(datasets);
+    } catch(e) { setAltDatasets([]); }
+    setSwapping(false);
+  }
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+    <div style={{
+      position:"relative",
+      background:"#060f20",
+      border:`1px solid ${expanded ? color + "60" : "#0e1e35"}`,
+      borderRadius:10,
+      padding:"12px 14px",
+      minWidth:200, maxWidth:240,
+      flexShrink:0,
+      boxShadow: expanded ? `0 0 20px ${color}18` : "none",
+      transition:"all .2s",
+      cursor:"default",
+    }}>
+      {/* tactic pill */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+        <span style={{ ...mono, fontSize:8, color, letterSpacing:"0.1em", fontWeight:700,
+          background:`${color}15`, border:`1px solid ${color}30`,
+          padding:"2px 7px", borderRadius:3 }}>{TACTIC_SHORT[tactic] || tactic}</span>
+        <button onClick={()=>onRemove(index)}
+          style={{ background:"none", border:"none", color:"#1e3a5f", cursor:"pointer",
+            fontSize:12, padding:"0 2px", lineHeight:1 }}
+          onMouseEnter={e=>e.target.style.color="#ef4444"}
+          onMouseLeave={e=>e.target.style.color="#1e3a5f"}>×</button>
+      </div>
 
-      {/* ── Import techniques ───────────────────────────────────────────────── */}
-      <Card>
-        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-          <div style={{...mono, fontSize:9, color:"#3d5a7a", letterSpacing:"0.08em"}}>IMPORT TECHNIQUES</div>
-          <input
-            placeholder="T1078, T1055, T1003…  (comma-separated or paste JSON)"
-            style={{ background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
-              padding:"7px 10px", color:"#c8d8f0", ...mono, fontSize:11, outline:"none" }}
-            onKeyDown={e => {
-              if (e.key !== "Enter") return;
-              const val = e.target.value.trim();
-              let techs = [];
-              try {
-                const parsed = JSON.parse(val);
-                if (Array.isArray(parsed)) techs = parsed.map(t => typeof t==="string"?t:t.technique).filter(Boolean);
-                else if (parsed.steps) techs = parsed.steps.map(s=>s.technique).filter(Boolean);
-              } catch {
-                techs = val.split(/[,\s]+/).map(s=>s.trim()).filter(s=>/^T\d/.test(s));
-              }
-              if (techs.length > 0) {
-                techs.forEach(tech => {
-                  const id = `import/${tech}/${Date.now()}`;
-                  addToFlow({ id, technique:tech, name:`${tech}-dataset`, lt:"UNKNOWN",
-                    ltColor:"#475569", mitre:[tech], desc:`Imported technique`,
-                    mediaUrl:`${RAW_BASE}/datasets/attack_techniques/${tech}/atomic_red_team/windows-sysmon.log`,
-                    source:"", sourcetype:"" });
-                });
-                e.target.value = "";
-              }
-            }}
-          />
-          <div style={{...mono, fontSize:9, color:"#1e3a5f"}}>
-            Press Enter · accepts T-IDs, comma list, or ATT&amp;CK Flow JSON export
-          </div>
+      {/* technique ID + name */}
+      <div style={{ ...mono, fontSize:11, color:"#e2f0ff", fontWeight:700, marginBottom:3 }}>
+        {step.technique}
+      </div>
+      <div style={{ fontSize:11, color:"#4a6a8a", marginBottom:8, lineHeight:1.3,
+        whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+        {step.name || step.desc?.substring(0,45) || "—"}
+      </div>
+
+      {/* log type badge */}
+      <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:8 }}>
+        <span style={{ ...mono, fontSize:9, color: step.ltColor || "#475569",
+          background: `${step.ltColor || "#475569"}15`,
+          border:`1px solid ${step.ltColor || "#475569"}30`,
+          padding:"1px 6px", borderRadius:3 }}>{step.lt}</span>
+      </div>
+
+      {/* dataset name (truncated) */}
+      <div style={{ ...mono, fontSize:8, color:"#1e3a5f", lineHeight:1.4,
+        whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", marginBottom:8 }}>
+        {step.id?.split("/").slice(1).join("/")}
+      </div>
+
+      {/* actions row */}
+      <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+        <button onClick={()=>onMoveLeft(index)} disabled={index===0}
+          style={{ ...mono, fontSize:9, padding:"3px 6px", background:"#030a17",
+            border:"1px solid #0e1e35", borderRadius:4, color: index===0?"#0e1e35":"#3d5a7a",
+            cursor: index===0?"not-allowed":"pointer" }}>◀</button>
+        <button onClick={()=>onMoveRight(index)} disabled={index===total-1}
+          style={{ ...mono, fontSize:9, padding:"3px 6px", background:"#030a17",
+            border:"1px solid #0e1e35", borderRadius:4, color: index===total-1?"#0e1e35":"#3d5a7a",
+            cursor: index===total-1?"not-allowed":"pointer" }}>▶</button>
+        <button onClick={()=>{ setExpanded(e=>!e); if(!expanded && altDatasets.length===0) loadAlts(); }}
+          style={{ ...mono, fontSize:8, padding:"3px 8px", background: expanded?"#0c1e3840":"#030a17",
+            border:`1px solid ${expanded?"#22d3ee30":"#0e1e35"}`, borderRadius:4,
+            color: expanded?"#22d3ee":"#3d5a7a", cursor:"pointer", flex:1 }}>
+          {swapping ? "…" : expanded ? "▲ close" : "⇄ swap"}
+        </button>
+      </div>
+
+      {/* swap panel */}
+      {expanded && (
+        <div style={{ marginTop:10, borderTop:"1px solid #0e1e35", paddingTop:8, maxHeight:180, overflowY:"auto" }}>
+          {altDatasets.length === 0 && !swapping && (
+            <div style={{ ...mono, fontSize:8, color:"#1e3a5f" }}>No alternate datasets found</div>
+          )}
+          {altDatasets.map((ds, i) => (
+            <div key={i} onClick={() => { onSwapDataset(index, ds); setExpanded(false); }}
+              style={{ padding:"6px 8px", borderRadius:5, marginBottom:3, cursor:"pointer",
+                background: ds.id===step.id ? "#0c1e38" : "#030a17",
+                border:`1px solid ${ds.id===step.id ? "#22d3ee30" : "#0e1e35"}` }}
+              onMouseEnter={e=>e.currentTarget.style.borderColor="#22d3ee30"}
+              onMouseLeave={e=>e.currentTarget.style.borderColor= ds.id===step.id?"#22d3ee30":"#0e1e35"}>
+              <div style={{ ...mono, fontSize:8, color: ds.ltColor || "#475569",
+                marginBottom:2 }}>{ds.lt}</div>
+              <div style={{ ...mono, fontSize:8, color:"#4a6a8a", lineHeight:1.3 }}>
+                {ds.id?.split("/").slice(1).join("/")}
+              </div>
+            </div>
+          ))}
         </div>
-      </Card>
+      )}
 
-      {/* ── Attack chain ────────────────────────────────────────────────────── */}
-      <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <SectionLabel>ATTACK CHAIN — {flowSteps.length} STEPS</SectionLabel>
-            {Object.entries(tacticCoverage).map(([t,n]) => {
-              const c = TACTIC_COLORS[t]||"#475569";
-              return (
-                <div key={t} style={{ display:"flex", alignItems:"center", gap:4,
-                  padding:"2px 7px", background:`${c}12`, borderRadius:4, border:`1px solid ${c}28` }}>
-                  <span style={{...mono, fontSize:9, color:c}}>{t}</span>
-                  <span style={{ background:c, color:"#fff", borderRadius:"50%",
-                    width:14, height:14, display:"flex", alignItems:"center",
-                    justifyContent:"center", fontSize:8, fontWeight:"bold" }}>{n}</span>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
-            {flowSteps.length > 0 && <Btn variant="secondary" sm onClick={()=>setFlowSteps([])}>clear all</Btn>}
-            <Btn variant="primary" sm onClick={()=>setBrowserOpen(v=>!v)}>
-              {browserOpen ? "▲ close browser" : "+ add step"}
-            </Btn>
-          </div>
-        </div>
-
-        {flowSteps.length === 0 && !browserOpen && (
-          <div style={{ padding:"40px 0", textAlign:"center", ...sans, fontSize:12, color:"#162035" }}>
-            Paste technique IDs above and press Enter, or click <strong style={{color:"#22d3ee"}}>+ add step</strong> to browse datasets
-          </div>
-        )}
-
-        {flowSteps.length > 0 && (
-          <div style={{ display:"flex", flexDirection:"column", gap:0, marginBottom: browserOpen ? 16 : 0 }}>
-            {flowSteps.map((s,i) => {
-              const tc = TACTIC_COLORS[getTactic(s.mitre?.[0]||s.technique)] || "#1e293b";
-              const isOpen = openStep === s.id;
-              const isSwap = swapStep === s.id;
-              const variants = swapVariants[s.id] || [];
-              return (
-                <div key={s.id}>
-                  <div style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 12px",
-                    background: isSwap?"#091828":"#040c1a",
-                    border:`1px solid ${isSwap?"#f59e0b35":"#0c1e38"}`,
-                    borderRadius: isSwap||isOpen ? "8px 8px 0 0" : 8 }}>
-
-                    {/* step number */}
-                    <div style={{ display:"flex", flexDirection:"column", gap:2, alignItems:"center", flexShrink:0 }}>
-                      <div style={{ width:28, height:28, borderRadius:"50%",
-                        background:`${tc}18`, border:`2px solid ${tc}55`,
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        ...mono, fontSize:11, fontWeight:700, color:tc }}>{i+1}</div>
-                      <div style={{ display:"flex", flexDirection:"column", gap:1 }}>
-                        <button onClick={()=>{ if(i===0) return; setFlowSteps(p=>{const a=[...p];[a[i-1],a[i]]=[a[i],a[i-1]];return a;}); }}
-                          disabled={i===0}
-                          style={{ background:"none", border:"none", color:i===0?"#0c1e38":"#3d5a7a",
-                            cursor:i===0?"default":"pointer", fontSize:9, padding:"1px 3px", lineHeight:1 }}>▲</button>
-                        <button onClick={()=>{ if(i===flowSteps.length-1) return; setFlowSteps(p=>{const a=[...p];[a[i],a[i+1]]=[a[i+1],a[i]];return a;}); }}
-                          disabled={i===flowSteps.length-1}
-                          style={{ background:"none", border:"none", color:i===flowSteps.length-1?"#0c1e38":"#3d5a7a",
-                            cursor:i===flowSteps.length-1?"default":"pointer", fontSize:9, padding:"1px 3px", lineHeight:1 }}>▼</button>
-                      </div>
-                    </div>
-
-                    <div style={{ width:3, height:36, borderRadius:2, background:tc, flexShrink:0 }}/>
-
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:3 }}>
-                        <span style={{...mono, fontSize:12, color:"#c8d8f0", fontWeight:600 }}>{s.name}</span>
-                        <Pill label={s.technique} color="#f59e0b" sm/>
-                        <Pill label={s.lt} color={s.ltColor||"#475569"} sm/>
-                        {SECOPS_LOG_TYPES.has(s.lt)
-                          ? <Pill label="✓ SecOps" color="#10b981" sm/>
-                          : <Pill label="⚠ unmapped" color="#f59e0b" sm/>}
-                        {s.tool && <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{s.tool}</span>}
-                      </div>
-                      <div style={{...sans, fontSize:10, color:"#2a4060" }}>{s.desc?.slice(0,80)}{s.desc?.length>80?"…":""}</div>
-                    </div>
-
-                    <Pill label={getTactic(s.technique)} color={tc} sm dot/>
-                    <div style={{ display:"flex", gap:5, flexShrink:0 }}>
-                      <Btn variant={isSwap?"primary":"ghost"} sm onClick={e=>{e.stopPropagation();openSwap(s);}}>
-                        {isSwap ? "▲ variants" : "⇄ swap"}
-                      </Btn>
-                      <Btn variant="ghost" sm onClick={()=>{setOpenStep(isOpen?null:s.id);setSwapStep(null);}}>
-                        {isOpen?"▲":"▼"}
-                      </Btn>
-                      <Btn variant="danger" sm onClick={()=>setFlowSteps(p=>p.filter(x=>x.id!==s.id))}>×</Btn>
-                    </div>
-                  </div>
-
-                  {/* swap panel */}
-                  {isSwap && (
-                    <div style={{ background:"#040c1a", border:"1px solid #f59e0b25",
-                      borderTop:"none", borderRadius:"0 0 8px 8px",
-                      padding:"10px 12px", marginBottom:2, animation:"slideUp .15s" }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-                        <span style={{...mono, fontSize:9, color:"#f59e0b", letterSpacing:"0.1em" }}>
-                          ⇄ SWAP VARIANT — {s.technique}
-                        </span>
-                        {loadingSwap===s.id && <Spinner size={12}/>}
-                        {!loadingSwap && variants.length > 0 && (
-                          <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{variants.length} variant{variants.length!==1?"s":""} available</span>
-                        )}
-                      </div>
-                      {loadingSwap===s.id && <div style={{...mono, fontSize:10, color:"#3d5a7a", padding:"8px 0" }}>fetching variants for {s.technique}…</div>}
-                      {!loadingSwap && variants.length === 0 && <div style={{...mono, fontSize:10, color:"#1e3a5f", padding:"8px 0" }}>No other variants found</div>}
-                      {!loadingSwap && variants.map(v => {
-                        const isCurrent = v.name === s.name && v.tool === s.tool;
-                        return (
-                          <div key={v.id}
-                            style={{ display:"flex", alignItems:"center", gap:10,
-                              padding:"8px 10px", marginBottom:4, borderRadius:6,
-                              background: isCurrent?"#081b14":"#030a17",
-                              border:`1px solid ${isCurrent?"#10b98130":"#0c1e38"}`,
-                              cursor: isCurrent?"default":"pointer", opacity: isCurrent?.7:1, transition:"all .15s" }}
-                            onClick={()=>!isCurrent&&swapVariant(s.id, v)}>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
-                                <span style={{...mono, fontSize:11, color: isCurrent?"#10b981":"#c8d8f0", fontWeight: isCurrent?700:400 }}>{v.name}</span>
-                                {isCurrent && <Pill label="current" color="#10b981" sm/>}
-                                <Pill label={v.lt} color={v.ltColor||"#475569"} sm/>
-                              </div>
-                              <div style={{ display:"flex", gap:6 }}>
-                                <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{v.tool}</span>
-                                {v.source && <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>· {v.source.split(":").pop()}</span>}
-                              </div>
-                            </div>
-                            {!isCurrent && <Btn variant="ghost" sm>use this →</Btn>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* detail panel */}
-                  {isOpen && (
-                    <div style={{ padding:"12px 56px", background:"#030a17",
-                      borderLeft:"3px solid #0c1e38", marginBottom:2, animation:"slideUp .15s" }}>
-                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-                        <div>
-                          <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>MEDIA URL (HTTPS PULL)</div>
-                          <div style={{...mono, fontSize:9, color:"#3d5a7a", wordBreak:"break-all", lineHeight:1.5 }}>{s.mediaUrl||"—"}</div>
-                        </div>
-                        <div>
-                          <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>SOURCE / SOURCETYPE</div>
-                          <div style={{...mono, fontSize:9, color:"#3d5a7a" }}>{s.source||"—"}</div>
-                        </div>
-                        <div>
-                          <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:4 }}>SECOPS LOG TYPE</div>
-                          <Pill label={s.lt} color={s.ltColor||"#475569"} sm/>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {i < flowSteps.length-1 && (
-                    <div style={{ display:"flex", justifyContent:"center", padding:"3px 0" }}>
-                      <span style={{ color:"#22d3ee", fontSize:11, animation:"flowBeat 2s infinite" }}>▼</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── Inline Dataset Browser ─────────────────────────────────────────── */}
-        {browserOpen && (
-          <div style={{ borderTop: flowSteps.length > 0 ? "1px solid #0c1e38" : "none",
-            paddingTop: flowSteps.length > 0 ? 16 : 0 }}>
-
-            {/* token bar */}
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
-              marginBottom:12, padding:"10px 12px", background:"#030a17",
-              borderRadius:8, border:"1px solid #0c1e38" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                <span style={{ fontSize:13 }}>🔑</span>
-                <div style={{...mono, fontSize:10, color: ghToken ? "#10b981" : "#f59e0b"}}>
-                  {ghToken ? "GitHub token set — 5,000 req/hr" : "No token — 60 req/hr (may hit limit)"}
-                </div>
-              </div>
-              <div style={{ display:"flex", gap:8 }}>
-                {ghToken && <Pill label="authenticated ✓" color="#10b981" sm/>}
-                <Btn variant="ghost" sm onClick={()=>setShowTokenForm(v=>!v)}>
-                  {showTokenForm ? "cancel" : ghToken ? "update token" : "add token"}
-                </Btn>
-                <Btn variant="secondary" sm onClick={()=>loadFolders()}>↻</Btn>
-              </div>
-            </div>
-
-            {showTokenForm && (
-              <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-                <input value={tokenInput} onChange={e=>setTokenInput(e.target.value)}
-                  placeholder="ghp_xxxxxxxxxxxx (read-only public repo token)"
-                  type="password"
-                  style={{ flex:1, background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
-                    padding:"7px 12px", color:"#c8d8f0", ...mono, fontSize:11, outline:"none" }}/>
-                <Btn onClick={()=>{setGhToken(tokenInput);setShowTokenForm(false);cache.folders=null;loadFolders(tokenInput);}}>
-                  save & reload
-                </Btn>
-              </div>
-            )}
-
-            {/* search + filters */}
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
-              <Inp label="Search technique ID or keyword" value={search} onChange={setSearch}
-                placeholder="T1003, kerberos, lateral…" mono/>
-              <Sel
-                label={`Filter by Tactic${logTypeFilter !== "all" ? ` · ${availableTactics.length - 1} match` : ""}`}
-                value={tacticFilter} onChange={v => { setTacticFilter(v); setLogTypeFilter("all"); }}
-                options={availableTactics}/>
-              <Sel
-                label={`Filter by Log Type${repoIndex ? ` · ${availableLogTypes.length - 1} available` : " · indexing…"}`}
-                value={logTypeFilter} onChange={v => { setLogTypeFilter(v); setTacticFilter("all"); }}
-                options={availableLogTypes}/>
-            </div>
-
-            {/* stats bar */}
-            <div style={{ display:"flex", gap:12, alignItems:"center", marginBottom:10, flexWrap:"wrap" }}>
-              <div style={{...mono, fontSize:10, color:"#1e3a5f"}}>
-                {loadingFolders ? "loading from GitHub API…"
-                  : `${filteredTechs.length} techniques · ${allLoadedDs.length} datasets loaded · ${flowSteps.length} in flow`}
-              </div>
-              {allLoadedDs.length > 0 && (
-                <>
-                  <div style={{ display:"flex", alignItems:"center", gap:5, padding:"2px 8px",
-                    background:"#10b98112", border:"1px solid #10b98128", borderRadius:4 }}>
-                    <span style={{...mono, fontSize:9, color:"#10b981"}}>✓ {mappedCount} SecOps mapped</span>
-                  </div>
-                  {unmappedCount > 0 && (
-                    <div style={{ display:"flex", alignItems:"center", gap:5, padding:"2px 8px",
-                      background:"#f59e0b12", border:"1px solid #f59e0b28", borderRadius:4 }}>
-                      <span style={{...mono, fontSize:9, color:"#f59e0b"}}>⚠ {unmappedCount} unmapped</span>
-                    </div>
-                  )}
-                  {logTypeFilter !== "all" && (
-                    <div style={{ display:"flex", alignItems:"center", gap:5, padding:"2px 8px",
-                      background:"#22d3ee12", border:"1px solid #22d3ee28", borderRadius:4 }}>
-                      <span style={{...mono, fontSize:9, color:"#22d3ee"}}>filter: {logTypeFilter}</span>
-                      <span onClick={()=>setLogTypeFilter("all")}
-                        style={{ cursor:"pointer", color:"#22d3ee", fontSize:11, lineHeight:1 }}>×</span>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {folderError && (
-              <div style={{ padding:"10px 14px", background:"#1a0808", border:"1px solid #ef444430",
-                borderRadius:8, ...mono, fontSize:11, color:"#ef4444", marginBottom:8 }}>
-                ⚠ {folderError}
-                {folderError.includes("403") && <span style={{ color:"#f59e0b" }}> — add a GitHub token to increase rate limit</span>}
-              </div>
-            )}
-
-            {/* technique list */}
-            <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:480, overflowY:"auto" }}>
-              {loadingFolders && Array(6).fill(0).map((_,i) => <SkeletonRow key={i}/>)}
-              {!loadingFolders && filteredTechs.map(tech => {
-                const tactic = getTactic(tech);
-                const tc = TACTIC_COLORS[tactic] || "#1e293b";
-                const isExp = expanded === tech;
-                const ds = techDatasets[tech] || [];
-                const inFlowCount = ds.filter(d => isInFlow(d)).length;
-                return (
-                  <div key={tech}>
-                    <div onClick={()=>expandTechnique(tech)}
-                      style={{ display:"flex", alignItems:"center", gap:12, padding:"9px 14px",
-                        background: isExp ? "#091828" : "#060f20",
-                        border:`1px solid ${isExp?"#22d3ee25":"#0c1e38"}`,
-                        borderRadius: isExp ? "8px 8px 0 0" : 8,
-                        cursor:"pointer", transition:"all .15s" }}>
-                      <div style={{ width:3, height:28, borderRadius:2, background:tc, flexShrink:0 }}/>
-                      <div style={{ flex:1 }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                          <span style={{...mono, fontSize:12, color:"#c8d8f0", fontWeight:600}}>{tech}</span>
-                          {inFlowCount > 0 && <Pill label={`${inFlowCount} in flow`} color="#22d3ee" sm/>}
-                          {loadingTech === tech && <Spinner size={12}/>}
-                        </div>
-                        <div style={{...sans, fontSize:10, color:"#3d5a7a", marginTop:1}}>
-                          {tactic}{ds.length > 0 && <span style={{ color:"#1e3a5f" }}> · {ds.length} datasets</span>}
-                        </div>
-                      </div>
-                      <Pill label={tactic} color={tc} sm dot/>
-                      <span style={{ color:"#1e3a5f", fontSize:11 }}>{isExp?"▲":"▼"}</span>
-                    </div>
-                    {isExp && (
-                      <div style={{ background:"#040c1a", border:"1px solid #0c1e38",
-                        borderTop:"none", borderRadius:"0 0 8px 8px", padding:"8px" }}>
-                        {loadingTech === tech && (
-                          <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px",
-                            ...mono, fontSize:11, color:"#3d5a7a" }}>
-                            <Spinner/> fetching YAML manifests…
-                          </div>
-                        )}
-                        {!loadingTech && ds.length === 0 && (
-                          <div style={{ padding:"12px", ...mono, fontSize:11, color:"#1e3a5f" }}>
-                            No parseable datasets found for {tech}
-                          </div>
-                        )}
-                        {ds.map(d => {
-                          const inF = isInFlow(d);
-                          return (
-                            <div key={d.id}
-                              style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px",
-                                background: inF ? "#081b30" : "transparent",
-                                borderRadius:6, marginBottom:3,
-                                border:`1px solid ${inF?"#22d3ee20":"transparent"}` }}>
-                              <div style={{ flex:1, minWidth:0 }}>
-                                <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:2 }}>
-                                  <span style={{...mono, fontSize:11, color: inF?"#c8d8f0":"#6a8aaa", fontWeight: inF?600:400}}>
-                                    {d.name}
-                                  </span>
-                                  <Pill label={d.lt} color={d.ltColor} sm/>
-                                  {SECOPS_LOG_TYPES.has(d.lt)
-                                    ? <Pill label="✓ SecOps" color="#10b981" sm/>
-                                    : <Pill label="⚠ unmapped" color="#f59e0b" sm/>}
-                                  {d.source && <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>{d.source.split(":").pop()}</span>}
-                                </div>
-                                <div style={{...mono, fontSize:9, color:"#1e3a5f", wordBreak:"break-all"}}>{d.mediaUrl||d.yamlPath}</div>
-                              </div>
-                              <Btn variant={inF?"secondary":"ghost"} sm
-                                onClick={()=>inF ? setFlowSteps(p=>p.filter(s=>s.id!==d.id)) : addToFlow(d)}>
-                                {inF ? "✓ added" : "+ add"}
-                              </Btn>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* ── Flow Export ─────────────────────────────────────────────────────── */}
-      {flowSteps.length > 0 && (
-        <Card>
-          <SectionLabel>FLOW EXPORT JSON</SectionLabel>
-          <CodeBlock code={exportFlow()} maxH="220px" filename={`${opName.toLowerCase().replace(/\s+/g,"-")}-flow.json`}/>
-        </Card>
+      {/* connector arrow (not last) */}
+      {index < total - 1 && (
+        <div style={{ position:"absolute", right:-18, top:"50%", transform:"translateY(-50%)",
+          color:"#0e1e35", fontSize:14, zIndex:2 }}>→</div>
       )}
     </div>
   );
 }
 
-function ConfigTab({ tenants, setTenants, schedule, setSchedule, delta, setDelta, ghToken, setGhToken, ghRepo, setGhRepo }) {
+// ── Dataset picker panel (from browse) ───────────────────────────────────────
+function DatasetBrowser({ ghToken, onAdd, repoIndex }) {
+  const [folders, setFolders]       = useState([]);
+  const [loading, setLoading]       = useState(false);
+  const [search, setSearch]         = useState("");
+  const [expanded, setExpanded]     = useState(null);
+  const [techDatasets, setTechDatasets] = useState({});
+  const [loadingTech, setLoadingTech]   = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchTechniqueFolders(ghToken)
+      .then(f => setFolders(f))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [ghToken]);
+
+  async function handleExpand(tech) {
+    if (expanded === tech) { setExpanded(null); return; }
+    setExpanded(tech);
+    if (!techDatasets[tech]) {
+      setLoadingTech(tech);
+      try {
+        const ds = await fetchYamlsForTechnique(tech, ghToken);
+        setTechDatasets(p => ({...p, [tech]: ds}));
+      } catch {}
+      setLoadingTech(null);
+    }
+  }
+
+  const filtered = folders.filter(f => f.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100%" }}>
+      <div style={{ padding:"0 0 8px 0" }}>
+        <input value={search} onChange={e=>setSearch(e.target.value)}
+          placeholder="Filter techniques…"
+          style={{ width:"100%", background:"#030a17", border:"1px solid #0c1e38",
+            borderRadius:6, padding:"7px 10px", color:"#c8d8f0", ...mono, fontSize:10,
+            outline:"none" }}
+          onFocus={e=>e.target.style.borderColor="#22d3ee44"}
+          onBlur={e=>e.target.style.borderColor="#0c1e38"}/>
+      </div>
+      <div style={{ flex:1, overflowY:"auto" }}>
+        {loading && [1,2,3,4,5].map(i=><SkeletonRow key={i}/>)}
+        {filtered.map(tech => {
+          const tactic = getTactic(tech);
+          const color  = tacticColor(tech);
+          const isOpen = expanded === tech;
+          const datasets = techDatasets[tech] || [];
+          return (
+            <div key={tech} style={{ marginBottom:3 }}>
+              <div onClick={()=>handleExpand(tech)}
+                style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px",
+                  background: isOpen ? "#060f20" : "#030a17",
+                  border:`1px solid ${isOpen ? color+"40":"#0c1e38"}`,
+                  borderRadius:6, cursor:"pointer", transition:"all .15s" }}
+                onMouseEnter={e=>e.currentTarget.style.borderColor= color+"40"}
+                onMouseLeave={e=>e.currentTarget.style.borderColor= isOpen?color+"40":"#0c1e38"}>
+                <span style={{ width:3, height:14, background:color, borderRadius:2, flexShrink:0 }}/>
+                <span style={{ ...mono, fontSize:10, color:"#c8d8f0", fontWeight:600, flex:1 }}>{tech}</span>
+                <span style={{ ...mono, fontSize:8, color:"#1e3a5f" }}>{TACTIC_SHORT[tactic]||tactic}</span>
+                <span style={{ ...mono, fontSize:10, color: isOpen?"#22d3ee":"#1e3a5f" }}>{isOpen?"▲":"▼"}</span>
+              </div>
+              {isOpen && (
+                <div style={{ marginTop:2, marginLeft:8, borderLeft:`1px solid ${color}30`, paddingLeft:8 }}>
+                  {loadingTech===tech && <div style={{padding:"8px 0"}}><Spinner size={12}/></div>}
+                  {datasets.length===0 && loadingTech!==tech && (
+                    <div style={{ ...mono, fontSize:8, color:"#1e3a5f", padding:"6px 0" }}>No datasets</div>
+                  )}
+                  {datasets.map((ds,i) => (
+                    <div key={i} onClick={()=>onAdd(ds)}
+                      style={{ display:"flex", alignItems:"flex-start", gap:8, padding:"7px 8px",
+                        background:"#030a17", border:"1px solid #0c1e38", borderRadius:5,
+                        marginBottom:3, cursor:"pointer" }}
+                      onMouseEnter={e=>{ e.currentTarget.style.borderColor="#22d3ee30"; e.currentTarget.style.background="#060f20"; }}
+                      onMouseLeave={e=>{ e.currentTarget.style.borderColor="#0c1e38"; e.currentTarget.style.background="#030a17"; }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ ...mono, fontSize:8, color: ds.ltColor, marginBottom:2 }}>{ds.lt}</div>
+                        <div style={{ ...mono, fontSize:9, color:"#4a6a8a", lineHeight:1.3,
+                          whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                          {ds.name || ds.id}
+                        </div>
+                      </div>
+                      <span style={{ ...mono, fontSize:9, color:"#22d3ee", flexShrink:0,
+                        background:"#22d3ee18", border:"1px solid #22d3ee30",
+                        padding:"2px 7px", borderRadius:4, marginTop:1 }}>+ add</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Story Generator (AI → TTP chain) ─────────────────────────────────────────
+function StoryGenerator({ onGenerate, ghToken, repoIndex, geminiKey }) {
+  const [story, setStory]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError]   = useState("");
+
+  const canGenerate = story.trim() && geminiKey?.trim();
+
+  async function generate() {
+    if (!canGenerate) return;
+    setLoading(true);
+    setError("");
+    try {
+      const availableTechs = repoIndex ? Object.keys(repoIndex.byTechnique) : [];
+      const techList = availableTechs.slice(0, 200).join(", ");
+
+      const prompt = `You are a threat intelligence expert helping map attack narratives to MITRE ATT&CK techniques.
+
+The user wants to build an attack scenario. Available techniques in the dataset library (splunk/attack_data):
+${techList}
+
+User's attack story:
+"${story}"
+
+Map this story to an ordered chain of MITRE ATT&CK techniques. For each step:
+1. Pick a technique ID from the available list if possible (prefer ones with datasets)
+2. Write a short label describing what happens at that step
+3. Order them chronologically as a kill chain
+
+Respond ONLY with valid JSON, no markdown, no explanation:
+{
+  "title": "short scenario name",
+  "steps": [
+    { "technique": "T1566.001", "label": "Spearphishing email with malicious attachment" },
+    { "technique": "T1204.002", "label": "User opens malicious Office document" }
+  ]
+}`;
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+          }),
+        }
+      );
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const clean = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+      onGenerate(parsed);
+    } catch (e) {
+      setError(e.message?.includes("API key") || e.message?.includes("401")
+        ? "Invalid Gemini API key — check the key in the sidebar"
+        : `Generation failed: ${e.message}`);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+      <div style={{ display:"flex", gap:8, alignItems:"flex-end" }}>
+        <div style={{ flex:1 }}>
+          <textarea
+            value={story}
+            onChange={e=>setStory(e.target.value)}
+            placeholder={geminiKey
+              ? "Describe your attack scenario… e.g. User XYZ clicks a phishing link, credentials stolen, attacker moves laterally to file server and exfiltrates documents"
+              : "Enter a Gemini API key in the sidebar to enable AI scenario generation…"}
+            rows={2}
+            disabled={!geminiKey}
+            style={{ width:"100%", background:"#030a17", border:"1px solid #0c1e38",
+              borderRadius:8, padding:"10px 14px", color: geminiKey ? "#c8d8f0" : "#2a4a6a",
+              fontSize:12, ...sans, outline:"none", resize:"none", lineHeight:1.5,
+              opacity: geminiKey ? 1 : 0.6 }}
+            onFocus={e=>e.target.style.borderColor="rgba(34,211,238,0.27)"}
+            onBlur={e=>e.target.style.borderColor="#0c1e38"}
+            onKeyDown={e=>{ if(e.key==="Enter" && e.metaKey) generate(); }}
+          />
+        </div>
+        <button onClick={generate} disabled={loading || !canGenerate}
+          style={{ padding:"10px 20px",
+            background: !canGenerate || loading ? "#030a17" : "linear-gradient(135deg,#0891b2,#0c4a6e)",
+            border:`1px solid ${!canGenerate || loading ? "#0c1e38" : "#0891b240"}`,
+            borderRadius:8, color: !canGenerate || loading ? "#2a4a6a" : "#fff", ...mono,
+            fontSize:11, fontWeight:700, cursor: !canGenerate || loading ? "not-allowed" : "pointer",
+            letterSpacing:"0.05em", whiteSpace:"nowrap", transition:"all .2s",
+            flexShrink:0, height:60, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          {loading ? <Spinner size={14}/> : "✦ Generate"}
+        </button>
+      </div>
+      {error && <div style={{ ...mono, fontSize:9, color:"#ef4444" }}>{error}</div>}
+      <div style={{ ...mono, fontSize:8, color:"#1e3a5f" }}>
+        {geminiKey
+          ? "\u2318\u21b5 to generate \xb7 Gemini maps your narrative to ATT&CK techniques and finds matching datasets"
+          : "\u26a0 Add a Gemini API key in the sidebar to enable AI scenario generation"}
+      </div>
+    </div>
+  );
+}
+
+
+// ── Sidebar config panel ──────────────────────────────────────────────────────
+function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setDelta,
+    ghToken, setGhToken, ghRepo, setGhRepo, geminiKey, setGeminiKey, onDeploy }) {
   const empty = { name:"", label:"", customerId:"", region:"US", credentials:"", ingestionLabels:[] };
   const [form, setForm]     = useState(empty);
   const [editIdx, setEditIdx] = useState(null);
-  const [labelKey, setLabelKey] = useState("");
-  const [labelVal, setLabelVal] = useState("");
+  const [addingTenant, setAddingTenant] = useState(false);
   const [preset, setPreset] = useState("Daily midnight");
-  const [showTokenForm, setShowTokenForm] = useState(false);
-  const [tokenInput, setTokenInput] = useState(ghToken);
   const f = k => v => setForm(p=>({...p,[k]:v}));
 
   const save = () => {
@@ -1065,379 +869,438 @@ function ConfigTab({ tenants, setTenants, schedule, setSchedule, delta, setDelta
     if (editIdx !== null) {
       setTenants(t=>t.map((x,i)=>i===editIdx?{...form}:x)); setEditIdx(null);
     } else setTenants(t=>[...t,{...form}]);
-    setForm(empty); setLabelKey(""); setLabelVal("");
+    setForm(empty); setAddingTenant(false);
   };
 
-  const addLabel = () => {
-    if (!labelKey.trim()) return;
-    setForm(p=>({...p, ingestionLabels:[...(p.ingestionLabels||[]), {key:labelKey.trim(), value:labelVal.trim()}]}));
-    setLabelKey(""); setLabelVal("");
-  };
-
-  const removeLabel = idx => setForm(p=>({...p, ingestionLabels:(p.ingestionLabels||[]).filter((_,i)=>i!==idx)}));
-  const parts = schedule.split(" ");
+  const parts = (schedule==="once" ? "- - - - -" : schedule).split(" ");
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+    <div style={{ display:"flex", flexDirection:"column", gap:0, height:"100%", overflowY:"auto" }}>
 
-      {/* ── Config file import / export ──────────────────────────────────── */}
-      <Card>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
-          <div>
-            <SectionLabel>CONFIG FILE</SectionLabel>
-            <div style={{...mono, fontSize:9, color:"#1e3a5f", marginTop:3}}>
-              Upload a JSON config to populate tenants, schedule, GitHub settings
-            </div>
+      {/* Header */}
+      <div style={{ padding:"16px 18px 12px", borderBottom:"1px solid #08172c", flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+          <div style={{ width:26, height:26, borderRadius:7, flexShrink:0,
+            background:"linear-gradient(135deg,#0891b2,#0c6e8a)",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:12, boxShadow:"0 0 14px #0891b220" }}>⛓</div>
+          <div style={{ fontWeight:800, fontSize:13, letterSpacing:"0.05em", color:"#e2f0ff" }}>
+            LOGSTORY
           </div>
-          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            {/* Upload */}
-            <label style={{ cursor:"pointer" }}>
-              <input type="file" accept=".json" style={{ display:"none" }}
-                onChange={e => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = evt => {
-                    try {
-                      const cfg = JSON.parse(evt.target.result);
-                      if (cfg.tenants)  setTenants(cfg.tenants);
-                      if (cfg.ghRepo)   setGhRepo(cfg.ghRepo);
-                      if (cfg.ghToken)  setGhToken(cfg.ghToken);
-                      if (cfg.schedule) setSchedule(cfg.schedule);
-                      if (cfg.delta)    setDelta(cfg.delta);
-                    } catch { alert("Invalid JSON config file"); }
-                  };
-                  reader.readAsText(file);
-                  e.target.value = "";
-                }}
-              />
-              <div style={{ display:"inline-flex", alignItems:"center", gap:6,
-                padding:"6px 12px", background:"#0c1e38", border:"1px solid #1e3a5f",
-                borderRadius:6, color:"#7eb8f7", ...mono, fontSize:10, cursor:"pointer",
-                transition:"border-color .15s" }}
-                onMouseEnter={e=>e.currentTarget.style.borderColor="#3b82f6"}
-                onMouseLeave={e=>e.currentTarget.style.borderColor="#1e3a5f"}>
-                ⬆ Upload config.json
+        </div>
+        <div style={{ ...mono, fontSize:7, color:"#0c1e38", letterSpacing:"0.16em" }}>
+          SPLUNK ATTACK DATA → GOOGLE SECOPS
+        </div>
+      </div>
+
+      {/* Config file import/export */}
+      <div style={{ padding:"12px 18px", borderBottom:"1px solid #08172c", flexShrink:0 }}>
+        <div style={{ ...mono, fontSize:8, color:"#3d5a7a", letterSpacing:"0.1em", marginBottom:8 }}>CONFIG FILE</div>
+        <div style={{ display:"flex", gap:6 }}>
+          <label style={{ cursor:"pointer", flex:1 }}>
+            <input type="file" accept=".json" style={{ display:"none" }}
+              onChange={e => {
+                const file = e.target.files?.[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = evt => {
+                  try {
+                    const cfg = JSON.parse(evt.target.result);
+                    if (cfg.tenants)  setTenants(cfg.tenants);
+                    if (cfg.ghRepo)   setGhRepo(cfg.ghRepo);
+                    if (cfg.ghToken)  setGhToken(cfg.ghToken);
+                    if (cfg.schedule) setSchedule(cfg.schedule);
+                    if (cfg.delta)    setDelta(cfg.delta);
+                  } catch { alert("Invalid JSON config"); }
+                  e.target.value="";
+                };
+                reader.readAsText(file);
+              }}/>
+            <div style={{ textAlign:"center", padding:"5px 8px", background:"#030a17",
+              border:"1px solid #0c1e38", borderRadius:5, color:"#4a6a8a",
+              ...mono, fontSize:9, cursor:"pointer" }}
+              onMouseEnter={e=>e.currentTarget.style.borderColor="#3b82f640"}
+              onMouseLeave={e=>e.currentTarget.style.borderColor="#0c1e38"}>
+              ⬆ Upload
+            </div>
+          </label>
+          <button onClick={() => {
+            const cfg = { tenants, ghRepo, ghToken, schedule, delta };
+            const blob = new Blob([JSON.stringify(cfg,null,2)],{type:"application/json"});
+            const a = document.createElement("a"); a.href=URL.createObjectURL(blob);
+            a.download="logstory-config.json"; a.click();
+          }} style={{ flex:1, padding:"5px 8px", background:"#030a17",
+            border:"1px solid #0c1e38", borderRadius:5, color:"#4a6a8a",
+            ...mono, fontSize:9, cursor:"pointer" }}
+            onMouseEnter={e=>e.currentTarget.style.borderColor="#3b82f640"}
+            onMouseLeave={e=>e.currentTarget.style.borderColor="#0c1e38"}>
+            ⬇ Export
+          </button>
+        </div>
+      </div>
+
+      {/* GitHub settings */}
+      <div style={{ padding:"12px 18px", borderBottom:"1px solid #08172c", flexShrink:0 }}>
+        <div style={{ ...mono, fontSize:8, color:"#3d5a7a", letterSpacing:"0.1em", marginBottom:8 }}>GITHUB</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+          <Inp label="Repo (owner/repo)" value={ghRepo} onChange={setGhRepo} placeholder="you/demo-data" mono/>
+          <Inp label="Token" value={ghToken} onChange={setGhToken} placeholder="ghp_…" mono/>
+        </div>
+      </div>
+
+      {/* Gemini key */}
+      <div style={{ padding:"12px 18px", borderBottom:"1px solid #08172c", flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+          <div style={{ ...mono, fontSize:8, color:"#3d5a7a", letterSpacing:"0.1em" }}>GEMINI API KEY</div>
+          {geminiKey && <span style={{ ...mono, fontSize:7, color:"#10b981",
+            background:"#10b98118", border:"1px solid #10b98130",
+            padding:"1px 6px", borderRadius:3 }}>✓ set</span>}
+        </div>
+        <Inp value={geminiKey} onChange={setGeminiKey}
+          placeholder="AIza…"
+          mono/>
+        <div style={{ ...mono, fontSize:7, color:"#1e3a5f", marginTop:5, lineHeight:1.5 }}>
+          Used only for scenario generation · never sent to our servers ·{" "}
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer"
+            style={{ color:"#3d5a7a", textDecoration:"none" }}
+            onMouseEnter={e=>e.target.style.color="#22d3ee"}
+            onMouseLeave={e=>e.target.style.color="#3d5a7a"}>get a key →</a>
+        </div>
+      </div>
+
+      {/* Schedule */}
+      <div style={{ padding:"12px 18px", borderBottom:"1px solid #08172c", flexShrink:0 }}>
+        <div style={{ ...mono, fontSize:8, color:"#3d5a7a", letterSpacing:"0.1em", marginBottom:8 }}>SCHEDULE</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4, marginBottom:8 }}>
+          {CRON_PRESETS.map(p=>(
+            <button key={p.l} onClick={()=>{setPreset(p.l); if(p.c) setSchedule(p.c);}}
+              style={{ padding:"5px 7px", textAlign:"left",
+                background:preset===p.l?"#091828":"#030a17",
+                border:`1px solid ${preset===p.l?"#22d3ee35":"#0c1e38"}`,
+                color:preset===p.l?"#22d3ee":"#3d5a7a",
+                borderRadius:5, ...mono, fontSize:8, cursor:"pointer" }}>{p.l}</button>
+          ))}
+        </div>
+        {preset==="Custom" && (
+          <Inp label="Cron expression" value={schedule} onChange={setSchedule} placeholder="1 0 * * *" mono/>
+        )}
+        {schedule!=="once" && (
+          <div style={{ display:"flex", gap:3, marginTop:6 }}>
+            {["MIN","HOUR","DOM","MON","DOW"].map((lbl,i)=>(
+              <div key={lbl} style={{ flex:1, textAlign:"center", background:"#030a17",
+                border:"1px solid #0c1e38", borderRadius:5, padding:"5px 2px" }}>
+                <div style={{ ...mono, fontSize:6, color:"#1e3a5f", marginBottom:2 }}>{lbl}</div>
+                <div style={{ ...mono, fontSize:11, color:"#22d3ee", fontWeight:700 }}>{parts[i]||"*"}</div>
               </div>
-            </label>
-            {/* Download current config */}
-            <Btn variant="ghost" sm onClick={() => {
-              const cfg = {
-                tenants,
-                ghRepo,
-                ghToken,
-                schedule,
-                delta,
-                _note: "Logstory Orchestrator config — keep ghToken private"
-              };
-              const blob = new Blob([JSON.stringify(cfg, null, 2)], { type:"application/json" });
-              const a = document.createElement("a");
-              a.href = URL.createObjectURL(blob);
-              a.download = "logstory-config.json";
-              a.click();
-            }}>⬇ Export config</Btn>
+            ))}
+          </div>
+        )}
+        {schedule==="once" && (
+          <div style={{ padding:"6px 8px", background:"#030a17", border:"1px solid #0c1e38",
+            borderRadius:5, ...mono, fontSize:8, color:"#22d3ee", lineHeight:1.5 }}>
+            Manual trigger only via GitHub Actions
+          </div>
+        )}
+        <div style={{ marginTop:8 }}>
+          <div style={{ ...mono, fontSize:8, color:"#3d5a7a", letterSpacing:"0.1em", marginBottom:5 }}>TIMESTAMP DELTA</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:4 }}>
+            {["1d","1d1h","2d","0d"].map(v=>(
+              <button key={v} onClick={()=>setDelta(v)}
+                style={{ padding:"6px 4px", borderRadius:5, cursor:"pointer",
+                  background:delta===v?"#091828":"#030a17",
+                  border:`1px solid ${delta===v?"#22d3ee35":"#0c1e38"}`,
+                  color:delta===v?"#22d3ee":"#3d5a7a",
+                  ...mono, fontSize:12, fontWeight:700 }}>{v}</button>
+            ))}
           </div>
         </div>
-        {/* Schema hint */}
-        <div style={{ marginTop:10, background:"#030a17", borderRadius:6, padding:"8px 10px",
-          ...mono, fontSize:9, color:"#1e3a5f", lineHeight:1.7 }}>
-          <span style={{ color:"#3d5a7a" }}>Expected shape: </span>
-          {`{ "tenants": [{ "name": "prod", "customerId": "…", "region": "US", "credentials": "{…}" }], `}
-          {`"ghRepo": "owner/repo", "schedule": "1 0 * * *", "delta": "1d" }`}
-        </div>
-      </Card>
+      </div>
 
-      {/* ── GitHub / API ─────────────────────────────────────────────────── */}
-      <Card>
-        <SectionLabel>GITHUB</SectionLabel>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-          <div>
-            <Inp label="Runner repo (owner/repo)" value={ghRepo} onChange={setGhRepo}
-              mono placeholder="keith-manville/demo-data"/>
+      {/* Tenants */}
+      <div style={{ padding:"12px 18px", flex:1 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+          <div style={{ ...mono, fontSize:8, color:"#3d5a7a", letterSpacing:"0.1em" }}>
+            TENANTS {tenants.length>0 && <span style={{color:"#22d3ee"}}>({tenants.length})</span>}
           </div>
-          <div>
-            <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:6, letterSpacing:"0.08em"}}>GITHUB TOKEN</div>
-            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-              {ghToken
-                ? <div style={{ display:"flex", gap:8, alignItems:"center", flex:1 }}>
-                    <Pill label="token set ✓" color="#10b981" sm/>
-                    <span style={{...mono, fontSize:9, color:"#1e3a5f"}}>5,000 req/hr</span>
-                    <Btn variant="ghost" sm onClick={()=>setShowTokenForm(v=>!v)}>update</Btn>
-                  </div>
-                : <Btn variant="secondary" sm onClick={()=>setShowTokenForm(v=>!v)}>+ add token</Btn>
-              }
-            </div>
-            {showTokenForm && (
-              <div style={{ display:"flex", gap:8, marginTop:8 }}>
-                <input value={tokenInput} onChange={e=>setTokenInput(e.target.value)}
-                  placeholder="ghp_xxxxxxxxxxxx" type="password"
-                  style={{ flex:1, background:"#030a17", border:"1px solid #0c1e38", borderRadius:6,
-                    padding:"7px 10px", color:"#c8d8f0", ...mono, fontSize:11, outline:"none" }}/>
-                <Btn sm onClick={()=>{ setGhToken(tokenInput); setShowTokenForm(false); }}>save</Btn>
-              </div>
-            )}
-          </div>
-        </div>
-      </Card>
-
-      {/* ── Schedule ─────────────────────────────────────────────────────── */}
-      <Card>
-        <SectionLabel>SCHEDULE & TIMING</SectionLabel>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-          {/* cron */}
-          <div>
-            <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:8, letterSpacing:"0.08em"}}>CRON PRESET</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
-              {CRON_PRESETS.map(p=>(
-                <button key={p.l} onClick={()=>{setPreset(p.l);if(p.c)setSchedule(p.c);}}
-                  style={{ padding:"7px 10px", textAlign:"left",
-                    background:preset===p.l?"#091828":"#030a17",
-                    border:`1px solid ${preset===p.l?"#22d3ee35":"#0c1e38"}`,
-                    color:preset===p.l?"#22d3ee":"#3d5a7a", borderRadius:6,
-                    ...mono, fontSize:10, cursor:"pointer" }}>{p.l}</button>
-              ))}
-            </div>
-            {preset==="Custom" && (
-              <Inp label="Cron Expression" value={schedule} onChange={setSchedule} placeholder="1 0 * * *" mono/>
-            )}
-            {schedule === "once"
-              ? <div style={{ padding:"10px 12px", background:"#030a17", border:"1px solid #0c1e38",
-                  borderRadius:6, ...mono, fontSize:10, color:"#22d3ee", lineHeight:1.5 }}>
-                  Workflow will only run when triggered manually via<br/>
-                  GitHub Actions → Run workflow, or the Trigger button in the Deploy tab.
-                </div>
-              : <div style={{ display:"flex", gap:5, marginTop:8 }}>
-                  {["MIN","HOUR","DOM","MON","DOW"].map((lbl,i)=>(
-                    <div key={lbl} style={{ flex:1, textAlign:"center", background:"#030a17",
-                      border:"1px solid #0c1e38", borderRadius:6, padding:"8px 4px" }}>
-                      <div style={{...mono, fontSize:7, color:"#1e3a5f", marginBottom:3}}>{lbl}</div>
-                      <div style={{...mono, fontSize:14, color:"#22d3ee", fontWeight:700}}>{parts[i]||"*"}</div>
-                    </div>
-                  ))}
-                </div>
-            }
-          </div>
-          {/* delta */}
-          <div>
-            <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:8, letterSpacing:"0.08em"}}>TIMESTAMP DELTA</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
-              {["1d","1d1h","2d","0d"].map(v=>(
-                <button key={v} onClick={()=>setDelta(v)}
-                  style={{ padding:"12px 8px", borderRadius:6, cursor:"pointer",
-                    background:delta===v?"#091828":"#030a17",
-                    border:`1px solid ${delta===v?"#22d3ee35":"#0c1e38"}`,
-                    color:delta===v?"#22d3ee":"#3d5a7a",
-                    ...mono, fontSize:16, fontWeight:700 }}>{v}</button>
-              ))}
-            </div>
-            <div style={{ padding:"10px 12px", background:"#030a17", border:"1px solid #0c1e38",
-              borderRadius:6, ...mono, fontSize:10, color:"#3d5a7a", lineHeight:1.5 }}>
-              {{"1d":"Recommended for daily midnight cron — events land yesterday, within detection window",
-                "1d1h":"Offset by 1d1h — prevents deduplication if running multiple times",
-                "2d":"Use when your ingestion pipeline has a lag before alerts fire",
-                "0d":"Updates date only, keeps HH:MM:SS — events may appear as future timestamps",
-              }[delta]}
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* ── Tenants ───────────────────────────────────────────────────────── */}
-      <Card>
-        <SectionLabel>{editIdx!==null ? "EDIT TENANT" : "ADD TENANT"}</SectionLabel>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:12 }}>
-          <Inp label="Tenant ID" value={form.name} onChange={f("name")} placeholder="acme-prod" mono/>
-          <Inp label="Display Label" value={form.label} onChange={f("label")} placeholder="Acme Production"/>
-          <Inp label="Customer ID (UUID)" value={form.customerId} onChange={f("customerId")} placeholder="01234567-…" mono/>
-          <Sel label="Region" value={form.region} onChange={f("region")} options={REGIONS}/>
-          <div style={{ gridColumn:"1/-1" }}>
-            <Inp label="Service Account Credentials JSON" value={form.credentials} onChange={f("credentials")}
-              placeholder='{"type":"service_account","project_id":"...","private_key":"..."}' rows={3} mono/>
-          </div>
+          <button onClick={()=>{ setAddingTenant(t=>!t); setForm(empty); setEditIdx(null); }}
+            style={{ ...mono, fontSize:9, padding:"3px 8px", background:"#030a17",
+              border:"1px solid #0c1e38", borderRadius:4, color:"#3d5a7a", cursor:"pointer" }}>
+            {addingTenant ? "cancel" : "+ add"}
+          </button>
         </div>
 
-        <div style={{ marginTop:12 }}>
-          <div style={{...mono, fontSize:9, color:"#3d5a7a", marginBottom:6, letterSpacing:"0.08em"}}>
-            INGESTION LABELS
-          </div>
-          {(form.ingestionLabels||[]).length > 0 && (
-            <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
-              {(form.ingestionLabels||[]).map((lbl,i)=>(
-                <span key={i} style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"3px 8px",
-                  background:"#0a1628", border:"1px solid #0c1e38", borderRadius:5,
-                  ...mono, fontSize:10, color:"#22d3ee" }}>
-                  <span style={{ color:"#3d5a7a" }}>{lbl.key}</span>=<span>{lbl.value}</span>
-                  <span onClick={()=>removeLabel(i)} style={{ cursor:"pointer", color:"#ef4444" }}>×</span>
-                </span>
-              ))}
+        {/* Existing tenants */}
+        {tenants.map((t,i) => (
+          <div key={i} style={{ padding:"7px 9px", background:"#030a17", border:"1px solid #0c1e38",
+            borderRadius:6, marginBottom:4, display:"flex", alignItems:"center", gap:8 }}>
+            <Dot status="success" size={5}/>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ ...mono, fontSize:9, color:"#c8d8f0", fontWeight:600,
+                whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{t.label||t.name}</div>
+              <div style={{ ...mono, fontSize:7, color:"#1e3a5f" }}>{t.region}</div>
             </div>
-          )}
-          <div style={{ display:"flex", gap:8 }}>
-            <div style={{ flex:1 }}><Inp label="Key" value={labelKey} onChange={setLabelKey} mono placeholder="env"/></div>
-            <div style={{ flex:1 }}><Inp label="Value" value={labelVal} onChange={setLabelVal} mono placeholder="demo"/></div>
-            <Btn onClick={addLabel} sm style={{ marginBottom:1 }}>+ add</Btn>
+            <button onClick={()=>{ setForm({...t}); setEditIdx(i); setAddingTenant(true); }}
+              style={{ background:"none", border:"none", color:"#1e3a5f", cursor:"pointer", ...mono, fontSize:9 }}>✎</button>
+            <button onClick={()=>setTenants(ts=>ts.filter((_,j)=>j!==i))}
+              style={{ background:"none", border:"none", color:"#1e3a5f", cursor:"pointer", ...mono, fontSize:11 }}
+              onMouseEnter={e=>e.target.style.color="#ef4444"}
+              onMouseLeave={e=>e.target.style.color="#1e3a5f"}>×</button>
           </div>
-        </div>
+        ))}
 
-        <div style={{ display:"flex", gap:8, marginTop:12 }}>
-          <Btn onClick={save}>{editIdx!==null ? "update" : "+ add tenant"}</Btn>
-          {editIdx!==null && <Btn variant="secondary" onClick={()=>{setEditIdx(null);setForm(empty);setLabelKey("");setLabelVal("");}}>cancel</Btn>}
-        </div>
-      </Card>
-
-      {tenants.length === 0
-        ? <div style={{ padding:"24px", textAlign:"center", ...sans, fontSize:12, color:"#1e3a5f",
-            border:"1px dashed #0c1e38", borderRadius:8 }}>
-            Add SecOps tenants — each becomes a matrix job in the generated workflow
+        {/* Add/edit form */}
+        {addingTenant && (
+          <div style={{ background:"#030a17", border:"1px solid #0c1e38", borderRadius:7, padding:10,
+            display:"flex", flexDirection:"column", gap:7 }}>
+            <Inp label="ID" value={form.name} onChange={f("name")} placeholder="acme-prod" mono/>
+            <Inp label="Label" value={form.label} onChange={f("label")} placeholder="Acme Production"/>
+            <Inp label="Customer ID" value={form.customerId} onChange={f("customerId")} placeholder="uuid" mono/>
+            <Sel label="Region" value={form.region} onChange={f("region")} options={REGIONS}/>
+            <Inp label="Credentials JSON" value={form.credentials} onChange={f("credentials")} rows={3} mono placeholder='{"type":"service_account",...}'/>
+            <Btn onClick={save} sm variant={editIdx!==null?"green":"primary"}>
+              {editIdx!==null ? "Update Tenant" : "Add Tenant"}
+            </Btn>
           </div>
-        : tenants.map((t,i)=>(
-          <Card key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 16px" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-              <Dot status="idle"/>
-              <div>
-                <div style={{...sans, fontSize:13, fontWeight:600, color:"#c8d8f0"}}>{t.label||t.name}</div>
-                <div style={{...mono, fontSize:10, color:"#1e3a5f"}}>
-                  {t.customerId ? t.customerId.slice(0,20)+"…" : "no id"} · {t.region}
-                </div>
-                {(t.ingestionLabels||[]).length > 0 && (
-                  <div style={{ display:"flex", gap:4, marginTop:3, flexWrap:"wrap" }}>
-                    {t.ingestionLabels.map((lbl,li)=>(
-                      <span key={li} style={{...mono, fontSize:9, color:"#3d5a7a", background:"#040c1a",
-                        border:"1px solid #0c1e38", borderRadius:3, padding:"1px 5px"}}>
-                        {lbl.key}={lbl.value}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-              <Pill label={t.region} color="#22d3ee" sm/>
-              {t.credentials && <Pill label="creds ✓" color="#10b981" sm/>}
-              {(t.ingestionLabels||[]).length > 0 && <Pill label={`${t.ingestionLabels.length} labels`} color="#8b5cf6" sm/>}
-              <Btn variant="ghost" sm onClick={()=>{setForm({...t, ingestionLabels:t.ingestionLabels||[]});setEditIdx(i);}}>edit</Btn>
-              <Btn variant="danger" sm onClick={()=>setTenants(t=>t.filter((_,j)=>j!==i))}>×</Btn>
-            </div>
-          </Card>
-        ))
-      }
+        )}
+      </div>
+
+      {/* Deploy button at bottom */}
+      <div style={{ padding:"12px 18px", borderTop:"1px solid #08172c", flexShrink:0 }}>
+        <button onClick={onDeploy}
+          disabled={tenants.length===0}
+          style={{ width:"100%", padding:"10px", background: tenants.length===0
+            ? "#030a17" : "linear-gradient(135deg,#059669,#047857)",
+            border:`1px solid ${tenants.length===0?"#0c1e38":"#059669"}`,
+            borderRadius:7, color: tenants.length===0?"#1e3a5f":"#fff",
+            ...mono, fontSize:11, fontWeight:700, cursor: tenants.length===0?"not-allowed":"pointer",
+            letterSpacing:"0.08em" }}>
+          🚀 DEPLOY
+        </button>
+      </div>
     </div>
   );
 }
 
-// ─── ENTITY EXTRACTOR PREVIEW ─────────────────────────────────────────────────
-// Shows what UDM entity NDJSON will be generated for a given flow
-// Based on known Attack Range entities — in production, extract_entities.py
-// parses the actual downloaded log files.
+// ── Main kill chain canvas ────────────────────────────────────────────────────
+function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoading, geminiKey }) {
+  const [view, setView] = useState("chain"); // "chain" | "browse"
+  const [dragOver, setDragOver] = useState(false);
+  const [scenarioTitle, setScenarioTitle] = useState("");
+  const canvasRef = useRef(null);
 
-// ─── ENTITY EXTRACTOR PREVIEW ─────────────────────────────────────────────────
-// Shows what UDM entity NDJSON will be generated for a given flow
-// Based on known Attack Range entities — in production, extract_entities.py
-// parses the actual downloaded log files.
+  function addStep(ds) {
+    setFlowSteps(p => [...p, {...ds, _key: Date.now() + Math.random()}]);
+  }
 
-function buildEntityNdjson(flowSteps) {
-  const now = new Date().toISOString();
-  const techniques = new Set(flowSteps.flatMap(s => s.mitre || [s.technique]));
+  function removeStep(i) {
+    setFlowSteps(p => p.filter((_,j)=>j!==i));
+  }
 
-  // Entity list removed — returns empty (entities extracted from logs at runtime)
-  const relevant = [];
+  function moveLeft(i) {
+    if (i===0) return;
+    setFlowSteps(p => { const a=[...p]; [a[i-1],a[i]]=[a[i],a[i-1]]; return a; });
+  }
 
-  const lines = [];
+  function moveRight(i) {
+    setFlowSteps(p => {
+      if (i>=p.length-1) return p;
+      const a=[...p]; [a[i],a[i+1]]=[a[i+1],a[i]]; return a;
+    });
+  }
 
-  relevant.forEach(e => {
-    if (e.type === "hostname") {
-      lines.push(JSON.stringify({
-        entity: {
-          asset: {
-            hostname: e.value,
-            attribute: {
-              labels: [
-                { key: "role", value: e.role },
-                { key: "source", value: "splunk_attack_data" },
-              ],
-              creation_time: { seconds: Math.floor(Date.now()/1000) - 86400 },
-            }
-          }
-        },
-        metadata: {
-          entity_type: "ASSET",
-          interval: { start_time: now, end_time: now },
-          source_type: "DERIVED_CONTEXT",
-          collected_timestamp: now,
-          product_name: "splunk/attack_data replay",
-          vendor_name: "Splunk",
+  function swapDataset(i, ds) {
+    setFlowSteps(p => p.map((s,j)=>j===i?{...ds,_key:s._key}:s));
+  }
+
+  async function handleGenerate({ title, steps }) {
+    setScenarioTitle(title || "");
+    const newSteps = [];
+    for (const s of steps) {
+      // try to load a dataset for this technique
+      try {
+        const datasets = await fetchYamlsForTechnique(s.technique, ghToken);
+        if (datasets.length > 0) {
+          newSteps.push({ ...datasets[0], _key: Date.now()+Math.random(),
+            _storyLabel: s.label });
+        } else {
+          // add a placeholder node
+          newSteps.push({
+            id: s.technique, technique: s.technique, name: s.label,
+            lt: "UNKNOWN", ltColor:"#475569", desc: s.label,
+            mediaUrl:"", _key: Date.now()+Math.random(), _storyLabel: s.label,
+            _noDataset: true,
+          });
         }
-      }));
-    } else if (e.type === "ip") {
-      lines.push(JSON.stringify({
-        entity: {
-          asset: {
-            ip: [e.value],
-            attribute: {
-              labels: [{ key: "role", value: e.role }],
-            }
-          }
-        },
-        metadata: {
-          entity_type: "ASSET",
-          interval: { start_time: now, end_time: now },
-          source_type: "DERIVED_CONTEXT",
-          collected_timestamp: now,
-          product_name: "splunk/attack_data replay",
-          vendor_name: "Splunk",
-        }
-      }));
-    } else if (e.type === "user") {
-      const parts = e.value.split("\\");
-      const username = parts.length > 1 ? parts[1] : e.value;
-      const domain   = parts.length > 1 ? parts[0] : "";
-      lines.push(JSON.stringify({
-        entity: {
-          user: {
-            user_display_name: username,
-            windows_sid: "",
-            attribute: {
-              labels: [
-                { key: "domain", value: domain },
-                { key: "role", value: e.role },
-              ]
-            }
-          }
-        },
-        metadata: {
-          entity_type: "USER",
-          interval: { start_time: now, end_time: now },
-          source_type: "DERIVED_CONTEXT",
-          collected_timestamp: now,
-          product_name: "splunk/attack_data replay",
-          vendor_name: "Splunk",
-        }
-      }));
-    } else if (e.type === "domain") {
-      lines.push(JSON.stringify({
-        entity: {
-          asset: {
-            network_domain: e.value,
-            attribute: {
-              labels: [{ key: "role", value: e.role }],
-            }
-          }
-        },
-        metadata: {
-          entity_type: "ASSET",
-          interval: { start_time: now, end_time: now },
-          source_type: "DERIVED_CONTEXT",
-          collected_timestamp: now,
-          product_name: "splunk/attack_data replay",
-          vendor_name: "Splunk",
-        }
-      }));
+      } catch {
+        newSteps.push({
+          id: s.technique, technique: s.technique, name: s.label,
+          lt:"UNKNOWN", ltColor:"#475569", desc:s.label, mediaUrl:"",
+          _key: Date.now()+Math.random(), _storyLabel: s.label, _noDataset:true,
+        });
+      }
     }
-    // processes and hashes are event-level data, not entity-level — skip
-  });
+    setFlowSteps(newSteps);
+  }
 
-  return lines.join("\n") || "# No entities found for current flow techniques";
+  // Group chain steps by tactic for color-coded timeline header
+  const tacticGroups = flowSteps.reduce((acc, s) => {
+    const t = getTactic(s.technique);
+    if (!acc[t]) acc[t] = 0;
+    acc[t]++;
+    return acc;
+  }, {});
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100%", minHeight:0 }}>
+
+      {/* Story generator bar */}
+      <div style={{ padding:"14px 20px", borderBottom:"1px solid #08172c", flexShrink:0,
+        background:"#020810" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
+          <div style={{ ...mono, fontSize:9, color:"#22d3ee", letterSpacing:"0.12em" }}>
+            <span style={{color:"#22d3ee55"}}>◈</span> SCENARIO GENERATOR
+          </div>
+          <div style={{ flex:1, height:1, background:"#08172c" }}/>
+          <div style={{ ...mono, fontSize:8, color:"#1e3a5f" }}>
+            {indexLoading ? "indexing repo…" : repoIndex
+              ? `${Object.keys(repoIndex.byTechnique).length} techniques indexed`
+              : "repo not indexed"}
+          </div>
+        </div>
+        <StoryGenerator onGenerate={handleGenerate} ghToken={ghToken} repoIndex={repoIndex} geminiKey={geminiKey}/>
+      </div>
+
+      {/* Chain / Browse toggle + chain title */}
+      <div style={{ padding:"10px 20px", borderBottom:"1px solid #08172c", flexShrink:0,
+        display:"flex", alignItems:"center", gap:12 }}>
+        <div style={{ display:"flex", background:"#030a17", border:"1px solid #0c1e38",
+          borderRadius:6, padding:2, gap:2 }}>
+          {[["chain","⛓ Chain"],["browse","◫ Browse"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setView(v)}
+              style={{ padding:"5px 12px", borderRadius:4, ...mono, fontSize:9,
+                fontWeight:600, cursor:"pointer", border:"none",
+                background: view===v ? "#0c1e38" : "transparent",
+                color: view===v ? "#22d3ee" : "#3d5a7a" }}>{l}</button>
+          ))}
+        </div>
+
+        {scenarioTitle && (
+          <div style={{ ...mono, fontSize:10, color:"#e2f0ff", fontWeight:700 }}>
+            {scenarioTitle}
+          </div>
+        )}
+
+        {/* tactic strip */}
+        <div style={{ display:"flex", gap:4, flex:1, flexWrap:"wrap" }}>
+          {Object.entries(tacticGroups).map(([t,n])=>(
+            <span key={t} style={{ ...mono, fontSize:8,
+              color: TACTIC_COLORS[t] || "#475569",
+              background: `${TACTIC_COLORS[t] || "#475569"}15`,
+              border:`1px solid ${TACTIC_COLORS[t] || "#475569"}30`,
+              padding:"2px 7px", borderRadius:3 }}>
+              {TACTIC_SHORT[t]||t} ×{n}
+            </span>
+          ))}
+        </div>
+
+        <div style={{ ...mono, fontSize:9, color:"#1e3a5f", flexShrink:0 }}>
+          {flowSteps.length} step{flowSteps.length!==1?"s":""}
+        </div>
+
+        {flowSteps.length > 0 && (
+          <button onClick={()=>{ if(confirm("Clear the chain?")) setFlowSteps([]); }}
+            style={{ ...mono, fontSize:9, padding:"4px 9px", background:"transparent",
+              border:"1px solid #1e3a5f40", borderRadius:4, color:"#1e3a5f", cursor:"pointer" }}>
+            clear
+          </button>
+        )}
+      </div>
+
+      {/* Main content area */}
+      <div style={{ flex:1, overflow:"hidden", display:"flex", minHeight:0 }}>
+
+        {view === "chain" && (
+          <div ref={canvasRef} style={{ flex:1, overflowX:"auto", overflowY:"hidden",
+            padding:"20px 20px", display:"flex", alignItems:"center", gap:14 }}>
+            {flowSteps.length === 0 ? (
+              <div style={{ flex:1, display:"flex", flexDirection:"column",
+                alignItems:"center", justifyContent:"center", gap:12 }}>
+                <div style={{ fontSize:32, opacity:.15 }}>⛓</div>
+                <div style={{ ...mono, fontSize:11, color:"#1e3a5f", textAlign:"center", lineHeight:1.8 }}>
+                  Describe a scenario above and hit Generate<br/>
+                  — or switch to Browse and add techniques manually
+                </div>
+              </div>
+            ) : (
+              flowSteps.map((step, i) => (
+                <ChainNode
+                  key={step._key || i}
+                  step={step}
+                  index={i}
+                  total={flowSteps.length}
+                  onRemove={removeStep}
+                  onMoveLeft={moveLeft}
+                  onMoveRight={moveRight}
+                  onSwapDataset={swapDataset}
+                  repoIndex={repoIndex}
+                />
+              ))
+            )}
+          </div>
+        )}
+
+        {view === "browse" && (
+          <div style={{ flex:1, padding:"16px 20px", display:"flex", gap:16, minHeight:0 }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <DatasetBrowser ghToken={ghToken} onAdd={addStep} repoIndex={repoIndex}/>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
+
+// ── Deploy Drawer (slides up) ─────────────────────────────────────────────────
+function DeployDrawer({ open, onClose, tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGhRepo }) {
+  return (
+    <div style={{
+      position:"fixed", bottom:0, left:280, right:0,
+      height: open ? "65vh" : 0,
+      background:"#030a17",
+      borderTop: open ? "1px solid #22d3ee30" : "none",
+      transition:"height .35s cubic-bezier(.4,0,.2,1)",
+      overflow:"hidden",
+      zIndex:200,
+      boxShadow: open ? "0 -20px 60px #000a" : "none",
+    }}>
+      {open && (
+        <div style={{ height:"100%", display:"flex", flexDirection:"column" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+            padding:"10px 20px", borderBottom:"1px solid #08172c", flexShrink:0 }}>
+            <div style={{ ...mono, fontSize:10, color:"#22d3ee", letterSpacing:"0.12em" }}>
+              <span style={{color:"#22d3ee55"}}>◈</span> DEPLOY
+            </div>
+            <button onClick={onClose}
+              style={{ background:"none", border:"none", color:"#3d5a7a",
+                cursor:"pointer", ...mono, fontSize:11 }}>✕ close</button>
+          </div>
+          <div style={{ flex:1, overflowY:"auto" }}>
+            <DeployTab tenants={tenants} flowSteps={flowSteps} schedule={schedule}
+              delta={delta} ghToken={ghToken} ghRepo={ghRepo} setGhRepo={setGhRepo}/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PHASE_ORDER (used by DeployTab) ─────────────────────────────────────────
+const PHASE_ORDER = [
+  "Reconnaissance","Resource Development","Initial Access","Execution",
+  "Persistence","Privilege Escalation","Defense Evasion","Credential Access",
+  "Discovery","Lateral Movement","Collection","Command and Control",
+  "Exfiltration","Impact","Unknown",
+];
 
 // ─── GENERATE ARTIFACTS ───────────────────────────────────────────────────────
 
@@ -2100,155 +1963,74 @@ if __name__ == "__main__":
   );
 }
 
-// ─── THREAT INTEL TAB ────────────────────────────────────────────────────────
 
-// ─── THREAT INTEL TAB ────────────────────────────────────────────────────────
-// GTI API (VirusTotal Enterprise) — uses /api/v3 endpoints
-// Actors:    GET /api/v3/threat_actors?filter=name:{query}
-// Campaigns: GET /api/v3/collections?filter=name:{query}
-// TTPs:      Embedded in relationships → attack_techniques on actor/collection objects
-
-
-// Kill-chain phase ordering for sorting TTPs into a narrative flow
-const PHASE_ORDER = [
-  "Reconnaissance","Resource Development","Initial Access","Execution",
-  "Persistence","Privilege Escalation","Defense Evasion","Credential Access",
-  "Discovery","Lateral Movement","Collection","Command and Control",
-  "Exfiltration","Impact","Unknown",
-];
-
-// Well-known actors for quick-pick (name → GTI search term)
-const KNOWN_ACTORS = [
-  { name:"Volt Typhoon",    aliases:"Bronze Silhouette · VANGUARD PANDA", nation:"CN", color:"#ef4444" },
-  { name:"APT29",           aliases:"Cozy Bear · Midnight Blizzard · YTTRIUM", nation:"RU", color:"#f97316" },
-  { name:"APT41",           aliases:"BARIUM · Winnti · Double Dragon", nation:"CN", color:"#ef4444" },
-  { name:"Lazarus Group",   aliases:"HIDDEN COBRA · Zinc", nation:"KP", color:"#a855f7" },
-  { name:"FIN7",            aliases:"Carbon Spider · ELBRUS", nation:"UA/RU", color:"#f59e0b" },
-  { name:"ALPHV",           aliases:"BlackCat · Noberus", nation:"RaaS", color:"#ec4899" },
-  { name:"LockBit",         aliases:"LockBit 3.0 · Black", nation:"RaaS", color:"#dc2626" },
-  { name:"Scattered Spider",aliases:"Muddled Libra · UNC3944", nation:"EN", color:"#06b6d4" },
-  { name:"Sandworm",        aliases:"Voodoo Bear · IRIDIUM", nation:"RU", color:"#f97316" },
-  { name:"TA577",           aliases:"Water Curupira", nation:"Cybercrime", color:"#64748b" },
-];
-
-
-
-const TABS = [
-  {id:"flow",   icon:"⛓", label:"Attack Flow"},
-  {id:"config", icon:"⚙️", label:"Config"},
-  {id:"deploy", icon:"🚀", label:"Deploy"},
-];
-
-const PAGE_META = {
-  flow:   ["Attack Flow",  "Browse Splunk attack_data techniques, build a replay sequence, export as JSON"],
-  config: ["Config",       "Tenants · schedule · timestamp delta · GitHub token and repo"],
-  deploy: ["Deploy",       "Push workflow + scripts to GitHub, trigger runs, monitor status"],
-};
-
+// ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab]             = useState("flow");
   const [flowSteps, setFlowSteps] = useState([]);
   const [tenants, setTenants]     = useState([]);
-  const [schedule, setSchedule]   = useState("1 0 * * *");
+  const [schedule, setSchedule]   = useState("once");
   const [delta, setDelta]         = useState("1d");
   const [ghToken, setGhToken]     = useState("");
   const [ghRepo, setGhRepo]       = useState("keith-manville/demo-data");
+  const [deployOpen, setDeployOpen] = useState(false);
+  const [geminiKey, setGeminiKey] = useState("");
 
-  const badges = {
-    flow:   flowSteps.length,
-    config: tenants.length,
-    deploy: 0,
-  };
+  // Repo index (background fetch)
+  const [repoIndex, setRepoIndex]     = useState(null);
+  const [indexLoading, setIndexLoading] = useState(false);
 
-  const [title, sub] = PAGE_META[tab];
+  useEffect(() => {
+    setIndexLoading(true);
+    fetchRepoIndex(ghToken)
+      .then(idx => setRepoIndex(idx))
+      .catch(() => {})
+      .finally(() => setIndexLoading(false));
+  }, [ghToken]);
 
   return (
-    <div style={{ minHeight:"100vh", background:"#020810", color:"#c8d8f0", ...sans }}>
+    <div style={{ display:"flex", height:"100vh", overflow:"hidden",
+      background:"#020810", color:"#c8d8f0", ...sans }}>
       <style>{globalCss}</style>
 
-      {/* header */}
-      <div style={{ position:"sticky", top:0, zIndex:300, background:"#020810",
-        borderBottom:"1px solid #08172c" }}>
-        <div style={{ maxWidth:1240, margin:"0 auto", padding:"0 24px",
-          display:"flex", alignItems:"center", justifyContent:"space-between", height:50 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{ width:28, height:28, borderRadius:7, flexShrink:0,
-              background:"linear-gradient(135deg,#0891b2,#0c6e8a)",
-              display:"flex", alignItems:"center", justifyContent:"center",
-              fontSize:13, boxShadow:"0 0 16px #0891b220" }}>⛓</div>
-            <div>
-              <div style={{ fontWeight:800, fontSize:14, letterSpacing:"0.04em", color:"#e2f0ff" }}>
-                LOGSTORY ORCHESTRATOR
-              </div>
-              <div style={{...mono, fontSize:8, color:"#0c1e38", letterSpacing:"0.16em" }}>
-                SPLUNK ATTACK DATA → SECOPS · HTTPS PULL · MULTI-TENANT · CTF & WORKSHOPS
-              </div>
-            </div>
-          </div>
-          <div style={{ display:"flex", gap:5, alignItems:"center" }}>
-            {flowSteps.length > 0 && <Pill label={`${flowSteps.length} step flow`} color="#22d3ee" sm/>}
-            {tenants.length > 0 && <Pill label={`${tenants.length} tenant${tenants.length>1?"s":""}`} color="#10b981" sm/>}
-            <Pill label={schedule} color="#f59e0b" sm/>
-            <Pill label={`Δ ${delta}`} color="#8b5cf6" sm/>
-          </div>
-        </div>
-
-        <div style={{ maxWidth:1240, margin:"0 auto", padding:"0 24px",
-          display:"flex", overflowX:"auto", gap:0 }}>
-          {TABS.map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)}
-              style={{ display:"flex", alignItems:"center", gap:6, padding:"10px 15px",
-                background: tab===t.id?"#060f20":"transparent", border:"none",
-                borderBottom: tab===t.id?"2px solid #22d3ee":"2px solid transparent",
-                color: tab===t.id?"#22d3ee":"#3d5a7a",
-                ...mono, fontSize:10, fontWeight:tab===t.id?700:400,
-                letterSpacing:"0.1em", textTransform:"uppercase",
-                cursor:"pointer", transition:"all .2s", whiteSpace:"nowrap" }}>
-              <span style={{ fontSize:12 }}>{t.icon}</span>
-              {t.label}
-              {badges[t.id]>0 && (
-                <span style={{ background:"#22d3ee18", color:"#22d3ee", border:"1px solid #22d3ee30",
-                  borderRadius:10, padding:"0 5px", ...mono, fontSize:9, fontWeight:700 }}>
-                  {badges[t.id]}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+      {/* Left sidebar */}
+      <div style={{ width:280, flexShrink:0, borderRight:"1px solid #08172c",
+        background:"#020810", overflow:"hidden", display:"flex", flexDirection:"column" }}>
+        <SidebarConfig
+          tenants={tenants} setTenants={setTenants}
+          schedule={schedule} setSchedule={setSchedule}
+          delta={delta} setDelta={setDelta}
+          ghToken={ghToken} setGhToken={setGhToken}
+          ghRepo={ghRepo} setGhRepo={setGhRepo}
+          geminiKey={geminiKey} setGeminiKey={setGeminiKey}
+          onDeploy={() => setDeployOpen(true)}
+        />
       </div>
 
-      {/* content */}
-      <div style={{ maxWidth:1240, margin:"0 auto", padding:"24px 24px 60px" }}>
-        <div style={{ marginBottom:20 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:5 }}>
-            <span style={{ fontSize:18 }}>{TABS.find(t=>t.id===tab)?.icon}</span>
-            <span style={{ fontWeight:700, fontSize:20, color:"#e2f0ff" }}>{title}</span>
-          </div>
-          <div style={{...mono, fontSize:11, color:"#1e3a5f" }}>{sub}</div>
-        </div>
-
-        {tab==="flow"   && <FlowBuilder flowSteps={flowSteps} setFlowSteps={setFlowSteps} ghToken={ghToken} setGhToken={setGhToken}/>}
-        {tab==="config" && <ConfigTab tenants={tenants} setTenants={setTenants} schedule={schedule} setSchedule={setSchedule} delta={delta} setDelta={setDelta} ghToken={ghToken} setGhToken={setGhToken} ghRepo={ghRepo} setGhRepo={setGhRepo}/>}
-        {tab==="deploy" && <DeployTab tenants={tenants} flowSteps={flowSteps} schedule={schedule} delta={delta} ghToken={ghToken} ghRepo={ghRepo} setGhRepo={setGhRepo}/>}
+      {/* Main canvas area */}
+      <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0,
+        paddingBottom: deployOpen ? 0 : 0 }}>
+        <ScenarioCanvas
+          flowSteps={flowSteps}
+          setFlowSteps={setFlowSteps}
+          ghToken={ghToken}
+          repoIndex={repoIndex}
+          indexLoading={indexLoading}
+          geminiKey={geminiKey}
+        />
       </div>
 
-      {/* footer */}
-      <div style={{ borderTop:"1px solid #06111f", padding:"12px 24px",
-        display:"flex", justifyContent:"center", gap:24 }}>
-        {[
-          ["splunk/attack_data","https://github.com/splunk/attack_data"],
-          ["chronicle/logstory","https://github.com/chronicle/logstory"],
-          ["logstory docs","https://chronicle.github.io/logstory/"],
-          ["MITRE ATT&CK","https://attack.mitre.org"],
-          ["SecOps parsers","https://cloud.google.com/chronicle/docs/ingestion/parser-list/supported-default-parsers"],
-        ].map(([l,h])=>(
-          <a key={l} href={h} target="_blank" rel="noopener noreferrer"
-            style={{...mono, fontSize:9, color:"#0c1e38", textDecoration:"none",
-              letterSpacing:"0.05em", transition:"color .2s"}}
-            onMouseEnter={e=>e.target.style.color="#22d3ee"}
-            onMouseLeave={e=>e.target.style.color="#0c1e38"}>{l}</a>
-        ))}
-      </div>
+      {/* Deploy drawer (slides up from bottom) */}
+      <DeployDrawer
+        open={deployOpen}
+        onClose={()=>setDeployOpen(false)}
+        tenants={tenants}
+        flowSteps={flowSteps}
+        schedule={schedule}
+        delta={delta}
+        ghToken={ghToken}
+        ghRepo={ghRepo}
+        setGhRepo={setGhRepo}
+      />
     </div>
   );
 }
