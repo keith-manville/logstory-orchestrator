@@ -2176,9 +2176,9 @@ def extract_entities(log_file: Path, log_type: str) -> str:
     raw = log_file.read_text(errors="replace")
     if log_type in ("WINDOWS_SYSMON","WINEVTLOG","POWERSHELL"):
         for m in re.finditer(r"<Computer>([^<]+)</Computer>", raw): asset(hostname=m.group(1).strip())
-        for m in re.finditer(r"<Data Name=['\"]SubjectUserName['\"]>([^<]+)</Data>", raw): user(m.group(1).strip())
-        for m in re.finditer(r"<Data Name=['\"]TargetUserName['\"]>([^<]+)</Data>", raw): user(m.group(1).strip())
-        for m in re.finditer(r"<Data Name=['\"]IpAddress['\"]>([^<]+)</Data>", raw):
+        for m in re.finditer(r'<Data Name="SubjectUserName">([^<]+)</Data>', raw): user(m.group(1).strip())
+        for m in re.finditer(r'<Data Name="TargetUserName">([^<]+)</Data>', raw): user(m.group(1).strip())
+        for m in re.finditer(r'<Data Name="IpAddress">([^<]+)</Data>', raw):
             ip = m.group(1).strip().lstrip("-")
             if re.match(r"\d+\.\d+\.\d+\.\d+", ip): asset(ip=ip)
     elif log_type == "CS_EDR":
