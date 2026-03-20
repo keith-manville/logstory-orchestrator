@@ -1542,14 +1542,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
       0xf3bcc908,0x6a09e667,0x84caa73b,0xbb67ae85,0xfe94f82b,0x3c6ef372,
       0x5f1d36f1,0xa54ff53a,0xade682d1,0x510e527f,0x2b3e6c1f,0x9b05688c,
       0xfb41bd6b,0x1f83d9ab,0x137e2179,0x5be0cd19]);
-    const SIGMA82 = new Uint8Array([0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,
-      28,20,8,16,18,30,26,12,2,24,0,4,22,14,10,6,22,16,24,0,10,4,30,26,20,28,
-      6,12,14,2,18,8,14,18,6,2,26,24,22,28,4,12,10,20,8,0,30,16,18,0,10,14,4,
-      8,20,30,28,2,22,30,12,16,26,6,24,4,24,12,20,14,12,2,16,6,26,10,8,30,28,
-      2,18,24,10,2,30,28,26,8,20,0,14,12,6,18,4,16,22,24,22,28,18,22,6,0,16,
-      24,4,26,14,2,20,8,22,16,0,18,22,6,26,8,2,14,12,6,18,4,16,22,24,28,20,10,
-      30,14,4,16,18,14,26,6,2,30,22,18,28,6,16,12,0,30,8,10,2,24,20,0,2,4,6,8,
-      10,12,14,16,18,20,22,24,26,28,30,28,20,8,16,18,30,26,12,2,24,0,4,22,14,10,6]);
+    const SIGMA82 = new Uint8Array([0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,28,20,8,16,18,30,26,12,2,24,0,4,22,14,10,6,22,16,24,0,10,4,30,26,20,28,6,12,14,2,18,8,14,18,6,2,26,24,22,28,4,12,10,20,8,0,30,16,18,0,10,14,4,8,20,30,28,2,22,24,12,16,6,26,4,24,12,20,0,22,16,6,8,26,14,10,30,28,2,18,24,10,2,30,28,26,8,20,0,14,12,6,18,4,16,22,26,22,14,28,24,2,6,18,10,0,30,8,16,12,4,20,12,30,28,18,22,6,0,16,24,4,26,14,2,8,20,10,20,4,16,8,14,12,2,10,30,22,18,28,6,24,26,0,0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,28,20,8,16,18,30,26,12,2,24,0,4,22,14,10,6]);
     const v = new Uint32Array(32), m = new Uint32Array(32);
     function ADD64AA(a,b){const o=v[a]+v[b];let p=v[a+1]+v[b+1];if(o>=0x100000000)p++;v[a]=o;v[a+1]=p;}
     function ADD64AC(a,b0,b1){let o=v[a]+b0;if(b0<0)o+=0x100000000;let p=v[a+1]+b1;if(o>=0x100000000)p++;v[a]=o;v[a+1]=p;}
@@ -1910,6 +1903,7 @@ ${flowSteps.map((s,i) => {
         if: steps.write_creds.outputs.skip != \'true\'
         env:
           SECOPS_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
+          LOGSTORY_API_TYPE: rest
         run: |
           if [ -z "$SECOPS_CUSTOMER_ID" ]; then
             echo "::warning::Secret SECOPS_CUSTOMER_ID_\${{ matrix.tenant_id }} not set — skipping"
@@ -1927,6 +1921,7 @@ ${flowSteps.map((s,i) => {
         if: steps.write_creds.outputs.skip != \'true\' && \${{ github.event.inputs.skip_entities != 'true' }}
         env:
           SECOPS_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
+          LOGSTORY_API_TYPE: rest
         run: |
           if [ -z "$SECOPS_CUSTOMER_ID" ]; then
             exit 0
