@@ -1909,6 +1909,9 @@ ${flowSteps.map((s,i) => {
             echo "::warning::Secret SECOPS_CUSTOMER_ID_\${{ matrix.tenant_id }} not set — skipping"
             exit 0
           fi
+          # Extract project_id from service account JSON
+          LOGSTORY_PROJECT_ID=$(python3 -c "import json; print(json.load(open('/tmp/secops_creds.json')).get('project_id',''))")
+          export LOGSTORY_PROJECT_ID
           python scripts/replay_dataset.py \\
             --log-file /tmp/attack_data_cache/${fname} \\
             --log-type "${safeLt}" \\
@@ -1926,6 +1929,8 @@ ${flowSteps.map((s,i) => {
           if [ -z "$SECOPS_CUSTOMER_ID" ]; then
             exit 0
           fi
+          LOGSTORY_PROJECT_ID=$(python3 -c "import json; print(json.load(open('/tmp/secops_creds.json')).get('project_id',''))")
+          export LOGSTORY_PROJECT_ID
           python scripts/replay_dataset.py \\
             --log-file /tmp/attack_data_cache/${fname} \\
             --log-type "${safeLt}" \\
