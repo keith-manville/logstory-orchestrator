@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-// ─── SOURCETYPE → SECOPS LOG TYPE MAP ────────────────────────────────────────
+// ─── SOURCETYPE -> SECOPS LOG TYPE MAP ────────────────────────────────────────
 // Based on actual YAML sourcetypes seen in splunk/attack_data
 const ST_MAP = {
   "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational":   { lt:"WINDOWS_SYSMON",  color:"#3b82f6" },
@@ -386,7 +386,7 @@ async function fetchRepoIndex(token) {
   const byLogType      = {};
   const tacticLogTypes = {};
 
-  // Direct filename-stem → SecOps log type mappings
+  // Direct filename-stem -> SecOps log type mappings
   // Covers the cases ST_MAP can't reach via sourcetype lookup alone
   const directMap = {
     crowdstrike: "CS_EDR", falcon: "CS_EDR", cs_edr: "CS_EDR",
@@ -643,7 +643,7 @@ function ChainNode({ step, index, total, onRemove, onMoveLeft, onMoveRight, onSw
       {/* connector arrow (not last) */}
       {index < total - 1 && (
         <div style={{ position:"absolute", right:-18, top:"50%", transform:"translateY(-50%)",
-          color:"#0e1e35", fontSize:14, zIndex:2 }}>→</div>
+          color:"#0e1e35", fontSize:14, zIndex:2 }}>-></div>
       )}
     </div>
   );
@@ -748,7 +748,7 @@ function DatasetBrowser({ ghToken, onAdd, repoIndex }) {
   );
 }
 
-// ── Story Generator (AI → TTP chain) ─────────────────────────────────────────
+// ── Story Generator (AI -> TTP chain) ─────────────────────────────────────────
 function StoryGenerator({ onGenerate, ghToken, repoIndex, geminiKey }) {
   const [story, setStory]   = useState("");
   const [loading, setLoading] = useState(false);
@@ -918,7 +918,7 @@ function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setD
           </div>
         </div>
         <div style={{ ...mono, fontSize:7, color:"#0c1e38", letterSpacing:"0.16em" }}>
-          SPLUNK ATTACK DATA → GOOGLE SECOPS
+          SPLUNK ATTACK DATA -> GOOGLE SECOPS
         </div>
       </div>
 
@@ -995,7 +995,7 @@ function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setD
           <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer"
             style={{ color:"#3d5a7a", textDecoration:"none" }}
             onMouseEnter={e=>e.target.style.color="#22d3ee"}
-            onMouseLeave={e=>e.target.style.color="#3d5a7a"}>get a key →</a>
+            onMouseLeave={e=>e.target.style.color="#3d5a7a"}>get a key -></a>
         </div>
       </div>
 
@@ -1810,7 +1810,7 @@ ${schedule === "once" ? "" : `  schedule:\n    - cron: '${schedule}'\n`}  workfl
 
 jobs:
   replay:
-    name: Replay → \${{ matrix.tenant_display }}
+    name: Replay -> \${{ matrix.tenant_display }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1847,7 +1847,7 @@ ${tenants.map(t=>{
           SECRET_NAME="SECOPS_CREDENTIALS_\${{ matrix.tenant_id }}"
           if [ -z "$SECOPS_CREDS" ]; then
             echo "::warning::Secret $SECRET_NAME not set — skipping tenant \${{ matrix.tenant_id }}"
-            echo "           Add it: Settings → Secrets → Actions → New secret, name: $SECRET_NAME"
+            echo "           Add it: Settings -> Secrets -> Actions -> New secret, name: $SECRET_NAME"
             echo "skip=true" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -2032,7 +2032,7 @@ def main():
     import tempfile, re as _re
 
     FIELD_PATTERNS = {
-        # key → list of (regex_pattern, replacement_template)
+        # key -> list of (regex_pattern, replacement_template)
         # Covers Sysmon XML, WinEvtLog, CrowdStrike, Suricata, OKTA, raw text
         "actor_user": [
             (r'(?<="User":")([^"]+)', '{v}'),
@@ -2092,7 +2092,7 @@ def main():
         tmp.write(content)
         tmp.close()
         log_file = Path(tmp.name)
-        print(f"[info] Entity-substituted log written to {log_file} ({original_size} → {len(content)} bytes)")
+        print(f"[info] Entity-substituted log written to {log_file} ({original_size} -> {len(content)} bytes)")
     # ────────────────────────────────────────────────────────────────────────
 
     usecases_dir = get_logstory_usecases_dir()
@@ -2195,7 +2195,7 @@ def extract_entities(log_file: Path, log_type: str) -> str:
                 for f in ("id.orig_h","src_ip","id.resp_h","dest_ip"):
                     if ip := obj.get(f): asset(ip=ip)
             except: pass
-    return "\n".join(json.dumps(v) for v in entities.values())
+    return "\\n".join(json.dumps(v) for v in entities.values())
 
 if __name__ == "__main__":
     import argparse
@@ -2208,7 +2208,7 @@ if __name__ == "__main__":
     count = len(ndjson.splitlines()) if ndjson else 0
     if not count: print("[warn] No entities extracted"); sys.exit(0)
     Path(a.out).write_text(ndjson)
-    print(f"[ok] {count} entity records → {a.out}")
+    print(f"[ok] {count} entity records written to {a.out}")
 `;
 
   const DEPLOY_FILES = [
@@ -2400,7 +2400,7 @@ if __name__ == "__main__":
                   </div>
                   {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer"
                     style={{...mono, fontSize:10, color:"#22d3ee", textDecoration:"none", display:"block", marginTop:8}}>
-                    → view on GitHub ↗</a>}
+                    -> view on GitHub ↗</a>}
                 </div>
               )}
             </div>
