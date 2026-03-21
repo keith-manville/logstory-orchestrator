@@ -2122,15 +2122,17 @@ def main():
             "LOGSTORY_CREDENTIALS_PATH": args.credentials,
             "LOGSTORY_REGION":           args.region,
         }
-        cmd = [
-            "logstory", "replay", "usecase", USECASE_NAME,
+        common_args = [
             f"--timestamp-delta={args.timestamp_delta}",
             f"--credentials-path={args.credentials}",
             f"--customer-id={args.customer_id}",
             f"--region={args.region}",
         ]
         if args.entities:
-            cmd.append("--entities")
+            cmd = ["logstory", "replay", "logtype", USECASE_NAME, args.log_type,
+                   *common_args, "--entities"]
+        else:
+            cmd = ["logstory", "replay", "usecase", USECASE_NAME, *common_args]
 
         print(f"[info] Running: {' '.join(cmd)}")
         result = subprocess.run(cmd, env=env)
@@ -2195,7 +2197,7 @@ def extract_entities(log_file: Path, log_type: str) -> str:
                 for f in ("id.orig_h","src_ip","id.resp_h","dest_ip"):
                     if ip := obj.get(f): asset(ip=ip)
             except: pass
-    return "\\n".join(json.dumps(v) for v in entities.values())
+    return '\\n'.join(json.dumps(v) for v in entities.values())
 
 if __name__ == "__main__":
     import argparse
