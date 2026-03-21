@@ -2145,7 +2145,7 @@ def main():
     if args.log_type == "WINDOWS_SYSMON":
         content = log_file.read_text(errors="replace")
         normalized, n = _re.subn(
-            r"<Data Name=['"]UtcTime['"]>(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})[^<]*</Data>",
+            r"<Data Name=.UtcTime.>(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})[^<]*</Data>",
             lambda m: f'"UtcTime": "{m.group(1)}"',
             content
         )
