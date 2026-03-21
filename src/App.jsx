@@ -1947,43 +1947,29 @@ ${flowSteps.map((s,i) => {
 `;
 
   const replayScript = `#!/usr/bin/env python3
-"""scripts/replay_dataset.py — Logstory wrapper for Splunk Attack Data
-
-Installs a synthetic usecase directly into the logstory package usecases/
-directory (the only discovery path logstory supports), replays it, then
-cleans up. Works with any logstory version.
-"""
-import argparse, importlib, os, shutil, subprocess, sys
+"""scripts/replay_dataset.py — Logstory wrapper for Splunk Attack Data"""
+import argparse, os, shutil, subprocess, sys
 from pathlib import Path
 
 USECASE_NAME = "SPLUNK_ATTACK_DATA"
 
 def get_logstory_usecases_dir():
-    """Find the usecases/ directory inside the installed logstory package."""
     import logstory
     return Path(logstory.__file__).parent / "usecases"
 
 def install_usecase(usecases_dir, log_file, log_type, entities=False):
-    """Copy the log file into the logstory usecases/ folder as a named usecase."""
-    usecase_dir  = usecases_dir / USECASE_NAME
-    subdir       = "ENTITIES" if entities else "EVENTS"
-    ext          = ".ndjson" if entities else ".log"
-    target_dir   = usecase_dir / subdir
+    usecase_dir = usecases_dir / USECASE_NAME
+    subdir      = "ENTITIES" if entities else "EVENTS"
+    ext         = ".ndjson" if entities else ".log"
+    target_dir  = usecase_dir / subdir
     target_dir.mkdir(parents=True, exist_ok=True)
-
-    # logstory discovers files by log type name — filename must match exactly
-    target_file  = target_dir / f"{log_type}{ext}"
-    shutil.copy(log_file, target_file)
-
-    # Required __init__.py so Python treats it as a package
+    shutil.copy(log_file, target_dir / f"{log_type}{ext}")
     init = usecase_dir / "__init__.py"
     if not init.exists():
         init.touch()
-
     return usecase_dir
 
 def uninstall_usecase(usecases_dir):
-    """Remove the synthetic usecase after replay."""
     usecase_dir = usecases_dir / USECASE_NAME
     if usecase_dir.exists():
         shutil.rmtree(usecase_dir)
@@ -1998,13 +1984,9 @@ def main():
     p.add_argument("--timestamp-delta", default="1d")
     p.add_argument("--labels",          default="")
     p.add_argument("--entities",        action="store_true")
-    p.add_argument("--entity-map",      default="",
-                   help="Comma-separated key=value pairs for entity substitution. "
-                        "Supported keys: actor_user, actor_host, actor_ip, target_host, target_ip, domain. "
-                        "Example: actor_user=jsmith,actor_host=DESKTOP-ABC,actor_ip=10.0.1.5")
+    p.add_argument("--entity-map",      default="")
     args = p.parse_args()
 
-    # Validate credentials file is present and valid JSON
     creds_path = Path(args.credentials)
     if not creds_path.exists():
         sys.exit(f"[error] Credentials file not found: {creds_path}")
@@ -2012,139 +1994,91 @@ def main():
         import json
         creds_content = creds_path.read_text().strip()
         if not creds_content:
-            sys.exit("[error] Credentials file is empty — check that SECOPS_CREDENTIALS secret is set in GitHub")
+            sys.exit("[error] Credentials file is empty")
         json.loads(creds_content)
     except json.JSONDecodeError as e:
-        sys.exit(f"[error] Credentials file is not valid JSON: {e}\\n"
-                 f"        Check that SECOPS_CREDENTIALS secret contains the full service account JSON key")
+        sys.exit(f"[error] Credentials not valid JSON: {e}")
 
-    # Validate customer ID
     if not args.customer_id or not args.customer_id.strip():
-        sys.exit("[error] --customer-id is empty — check that SECOPS_CUSTOMER_ID secret is set in GitHub")
+        sys.exit("[error] --customer-id is empty")
 
     log_file = Path(args.log_file)
     if not log_file.exists():
         sys.exit(f"[error] Log file not found: {log_file}")
 
-    # ── Entity substitution ──────────────────────────────────────────────────
-    # Parse --entity-map and do find-replace on common field names before ingestion.
-    # We work on a temp copy so the cached file stays untouched.
+    # Entity substitution
     import tempfile, re as _re
-
     FIELD_PATTERNS = {
-        # key -> list of (regex_pattern, replacement_template)
-        # Covers Sysmon XML, WinEvtLog, CrowdStrike, Suricata, OKTA, raw text
-        "actor_user": [
-            (r'(?<="User":")([^"]+)', '{v}'),
-            (r'(?<=\\bSubjectUserName">)([^<]+)', '{v}'),
-            (r'(?<=\\bTargetUserName">)([^<]+)', '{v}'),
-            (r'(?<="user":")([^"]+)', '{v}'),
-            (r'(?<="UserName":")([^"]+)', '{v}'),
-        ],
-        "actor_host": [
-            (r'(?<="ComputerName":")([^"]+)', '{v}'),
-            (r'(?<=\\bComputer">)([^<]+)', '{v}'),
-            (r'(?<="src_device_hostname":")([^"]+)', '{v}'),
-            (r'(?<="hostname":")([^"]+)', '{v}'),
-        ],
-        "actor_ip": [
-            (r'(?<="IpAddress":")([^"]+)(?=")', '{v}'),
-            (r'(?<="src_ip":")([^"]+)(?=")', '{v}'),
-            (r'(?<="sourceIPAddress":")([^"]+)(?=")', '{v}'),
-        ],
-        "target_host": [
-            (r'(?<="DestinationHostname":")([^"]+)', '{v}'),
-            (r'(?<="dest_hostname":")([^"]+)', '{v}'),
-            (r'(?<="dest":")([^"]+)', '{v}'),
-        ],
-        "target_ip": [
-            (r'(?<="DestinationIp":")([^"]+)', '{v}'),
-            (r'(?<="dest_ip":")([^"]+)', '{v}'),
-        ],
-        "domain": [
-            (r'(?<="SubjectDomainName":")([^"]+)', '{v}'),
-            (r'(?<="TargetDomainName":")([^"]+)', '{v}'),
-            (r'(?<="domain":")([^"]+)', '{v}'),
-        ],
+        "actor_user":  [(r'(?<="User":")([^"]+)', '{v}'), (r'(?<=\bSubjectUserName">)([^<]+)', '{v}'),
+                        (r'(?<=\bTargetUserName">)([^<]+)', '{v}'), (r'(?<="user":")([^"]+)', '{v}')],
+        "actor_host":  [(r'(?<="ComputerName":")([^"]+)', '{v}'), (r'(?<=\bComputer">)([^<]+)', '{v}'),
+                        (r'(?<="hostname":")([^"]+)', '{v}')],
+        "actor_ip":    [(r'(?<="IpAddress":")([^"]+)(?=")', '{v}'), (r'(?<="src_ip":")([^"]+)(?=")', '{v}')],
+        "target_host": [(r'(?<="DestinationHostname":")([^"]+)', '{v}'), (r'(?<="dest_hostname":")([^"]+)', '{v}')],
+        "target_ip":   [(r'(?<="DestinationIp":")([^"]+)', '{v}'), (r'(?<="dest_ip":")([^"]+)', '{v}')],
+        "domain":      [(r'(?<="SubjectDomainName":")([^"]+)', '{v}'), (r'(?<="domain":")([^"]+)', '{v}')],
     }
-
     entity_map = {}
     if args.entity_map and args.entity_map.strip():
         for pair in args.entity_map.split(","):
             if "=" in pair:
                 k, v = pair.split("=", 1)
                 entity_map[k.strip()] = v.strip()
-
     if entity_map:
-        print(f"[info] Applying entity substitutions: {entity_map}")
+        print(f"[info] Entity substitutions: {entity_map}")
         content = log_file.read_text(errors="replace")
-        original_size = len(content)
         for key, value in entity_map.items():
-            patterns = FIELD_PATTERNS.get(key, [])
-            for pattern, tmpl in patterns:
-                replacement = tmpl.format(v=value)
-                content, n = _re.subn(pattern, replacement, content)
-                if n:
-                    print(f"[info]   {key}: replaced {n} occurrence(s) via pattern {pattern[:40]}…")
-        # Write substituted content to a temp file (don't clobber the cache)
+            for pattern, tmpl in FIELD_PATTERNS.get(key, []):
+                content, n = _re.subn(pattern, tmpl.format(v=value), content)
+                if n: print(f"[info]   {key}: {n} replacement(s)")
         suffix = log_file.suffix or ".log"
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode="w")
-        tmp.write(content)
-        tmp.close()
+        tmp.write(content); tmp.close()
         log_file = Path(tmp.name)
-        print(f"[info] Entity-substituted log written to {log_file} ({original_size} -> {len(content)} bytes)")
-    # ────────────────────────────────────────────────────────────────────────
 
     usecases_dir = get_logstory_usecases_dir()
     print(f"[info] logstory usecases dir: {usecases_dir}")
 
-    # If entities mode, generate NDJSON from events log first
     replay_file = log_file
     if args.entities:
         sys.path.insert(0, str(Path(__file__).parent))
         from extract_entities import extract_entities
         ndjson = extract_entities(log_file, args.log_type)
         if not ndjson or not ndjson.strip():
-            print(f"[warn] No entities extracted from {log_file.name} — skipping entity pass")
-            sys.exit(0)
+            print(f"[warn] No entities extracted — skipping"); sys.exit(0)
         ndjson_file = log_file.with_suffix(".ndjson")
         ndjson_file.write_text(ndjson)
         replay_file = ndjson_file
         print(f"[info] Extracted {len(ndjson.splitlines())} entity records")
+        # Ensure EVENTS/ exists alongside ENTITIES/ so logstory sees a valid usecase
+        events_dir = usecases_dir / USECASE_NAME / "EVENTS"
+        if not events_dir.exists():
+            install_usecase(usecases_dir, log_file, args.log_type, entities=False)
+        install_usecase(usecases_dir, replay_file, args.log_type, entities=True)
+        print(f"[info] Installed ENTITIES/{args.log_type}")
+    else:
+        install_usecase(usecases_dir, replay_file, args.log_type, entities=False)
+        print(f"[info] Installed EVENTS/{args.log_type}")
+
+    common_args = [f"--timestamp-delta={args.timestamp_delta}",
+                   f"--credentials-path={args.credentials}",
+                   f"--customer-id={args.customer_id}",
+                   f"--region={args.region}"]
+    cmd = ["logstory", "replay", "usecase", USECASE_NAME, *common_args]
+    if args.entities:
+        cmd.append("--entities")
 
     try:
-        install_usecase(usecases_dir, replay_file, args.log_type, entities=args.entities)
-        print(f"[info] Installed usecase {USECASE_NAME}/{('ENTITIES' if args.entities else 'EVENTS')}/{args.log_type}")
-
-        env = {
-            **os.environ,
-            "LOGSTORY_CUSTOMER_ID":      args.customer_id,
-            "LOGSTORY_CREDENTIALS_PATH": args.credentials,
-            "LOGSTORY_REGION":           args.region,
-        }
-        common_args = [
-            f"--timestamp-delta={args.timestamp_delta}",
-            f"--credentials-path={args.credentials}",
-            f"--customer-id={args.customer_id}",
-            f"--region={args.region}",
-        ]
-        if args.entities:
-            cmd = ["logstory", "replay", "logtype", USECASE_NAME, args.log_type,
-                   *common_args, "--entities"]
-        else:
-            cmd = ["logstory", "replay", "usecase", USECASE_NAME, *common_args]
-
         print(f"[info] Running: {' '.join(cmd)}")
-        result = subprocess.run(cmd, env=env)
+        result = subprocess.run(cmd)
         sys.exit(result.returncode)
-
     finally:
         uninstall_usecase(usecases_dir)
         print(f"[info] Cleaned up usecase {USECASE_NAME}")
 
 if __name__ == "__main__":
     main()
-`;
+`
 
   const entityExtractStandalone = `#!/usr/bin/env python3
 """scripts/extract_entities.py — extract UDM entity NDJSON from Splunk Attack Data logs"""
