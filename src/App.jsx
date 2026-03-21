@@ -2014,7 +2014,7 @@ def ingest_entities_direct(ndjson_file, credentials_path, customer_id, region):
         "ASIA-SOUTH1": "asia-south1-backstory.googleapis.com",
     }
     host = region_map.get(region.upper(), "backstory.googleapis.com")
-    url = f"https://{host}/v2/entities:batchCreate"
+    url = f"https://{host}/v1alpha/entities:batchCreate"
 
     # Batch into chunks of 1000
     chunk_size = 1000
@@ -2139,6 +2139,23 @@ def main():
         sys.exit(0)
 
     # Events pass  --  use logstory as normal
+    # Normalize Sysmon XML timestamps so logstory can find and rewrite them to now
+    # Splunk attack data uses: <Data Name='UtcTime'>2021-01-01 12:00:00.000</Data>
+    # logstory expects:        "UtcTime": "2021-01-01 12:00:00"
+    if args.log_type == "WINDOWS_SYSMON":
+        content = log_file.read_text(errors="replace")
+        normalized, n = _re.subn(
+            r"<Data Name=['"]UtcTime['"]>(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})[^<]*</Data>",
+            lambda m: f'"UtcTime": "{m.group(1)}"',
+            content
+        )
+        if n:
+            suffix = log_file.suffix or ".log"
+            tmp2 = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode="w")
+            tmp2.write(normalized); tmp2.close()
+            log_file = Path(tmp2.name)
+            print(f"[info] Normalized {n} WINDOWS_SYSMON UtcTime timestamps for logstory")
+
     install_usecase(usecases_dir, log_file, args.log_type, entities=False)
     print(f"[info] Installed EVENTS/{args.log_type}")
 
