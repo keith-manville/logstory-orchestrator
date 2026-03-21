@@ -151,7 +151,7 @@ const CRON_PRESETS = [
 ];
 
 // ─── GITHUB API HELPERS ───────────────────────────────────────────────────────
-// All log files served via media.githubusercontent.com  --  no git clone needed
+// All log files served via media.githubusercontent.com — no git clone needed
 const RAW_BASE = "https://media.githubusercontent.com/media/splunk/attack_data/master";
 const API_BASE = "https://api.github.com/repos/splunk/attack_data";
 const RAW_CONTENT = "https://raw.githubusercontent.com/splunk/attack_data/master";
@@ -192,7 +192,7 @@ function parseAttackDataYaml(text) {
       } else if (currentDs && trimmed.startsWith("source:")) {
         currentDs.source = trimmed.replace("source:","").trim();
       } else if (!trimmed.startsWith("-") && !trimmed.startsWith("name:") && !trimmed.startsWith("path:") && !trimmed.startsWith("sourcetype:") && !trimmed.startsWith("source:") && trimmed && !trimmed.startsWith("#") && !line.startsWith(" ") && !line.startsWith("\t")) {
-        // top-level key  --  end of datasets block
+        // top-level key — end of datasets block
         if (currentDs) { result.datasets.push(currentDs); currentDs = null; }
         inDatasets = false;
       }
@@ -410,7 +410,7 @@ async function fetchRepoIndex(token) {
     if (directMap[stem]) return directMap[stem];
     // 2. Exact match on SECOPS_LOG_TYPES (file literally named CS_EDR.log)
     if (SECOPS_LOG_TYPES.has(stem.toUpperCase())) return stem.toUpperCase();
-    // 3. Partial match  --  does stem contain a known keyword?
+    // 3. Partial match — does stem contain a known keyword?
     for (const [k, v] of Object.entries(directMap)) {
       if (stem.includes(k)) return v;
     }
@@ -505,7 +505,7 @@ async function fetchYamlsForTechnique(technique, token) {
         lt: ltInfo.lt,
         ltColor: ltInfo.color,
         mitre: parsed.mitre_technique.length ? parsed.mitre_technique : [technique],
-        desc: parsed.description || `${technique} dataset  --  ${tool}`,
+        desc: parsed.description || `${technique} dataset — ${tool}`,
         environment: parsed.environment,
         yamlPath: `datasets/attack_techniques/${technique}/${tool}/${yml.name}`,
       });
@@ -582,7 +582,7 @@ function ChainNode({ step, index, total, onRemove, onMoveLeft, onMoveRight, onSw
       </div>
       <div style={{ fontSize:11, color:"#4a6a8a", marginBottom:8, lineHeight:1.3,
         whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-        {step.name || step.desc?.substring(0,45) || " -- "}
+        {step.name || step.desc?.substring(0,45) || "—"}
       </div>
 
       {/* log type badge */}
@@ -834,7 +834,7 @@ Respond ONLY with valid JSON, no markdown, no explanation:
       onGenerate(parsed);
     } catch (e) {
       setError(e.message?.includes("API key") || e.message?.includes("401")
-        ? "Invalid Gemini API key  --  check the key in the sidebar"
+        ? "Invalid Gemini API key — check the key in the sidebar"
         : `Generation failed: ${e.message}`);
     }
     setLoading(false);
@@ -956,7 +956,7 @@ function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setD
           </label>
           <button onClick={() => {
             const cfg = { tenants, ghRepo, ghToken, schedule, delta, geminiKey, entityProfile,
-                _note: "Logstory Orchestrator config  --  keep ghToken and geminiKey private" };
+                _note: "Logstory Orchestrator config — keep ghToken and geminiKey private" };
             const blob = new Blob([JSON.stringify(cfg,null,2)],{type:"application/json"});
             const a = document.createElement("a"); a.href=URL.createObjectURL(blob);
             a.download="logstory-config.json"; a.click();
@@ -1268,7 +1268,7 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
             padding:"8px 20px 6px", borderBottom:"1px solid #040d1c" }}>
             <div style={{ ...mono, fontSize:9, color:"#22d3ee", letterSpacing:"0.1em" }}>
-              <span style={{color:"#22d3ee55"}}>◈</span> SCENARIO BRIEFING  --  {scenarioSummary.title}
+              <span style={{color:"#22d3ee55"}}>◈</span> SCENARIO BRIEFING — {scenarioSummary.title}
             </div>
             <button onClick={()=>setSummaryOpen(false)}
               style={{ ...mono, fontSize:8, color:"#1e3a5f", background:"none", border:"none",
@@ -1309,7 +1309,7 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
                     <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                       <span style={{ width:5, height:5, borderRadius:"50%",
                         background:"#f59e0b", flexShrink:0 }}/>
-                      <span style={{ ...mono, fontSize:7, color:"#f59e0b" }}>no dataset  --  manual add</span>
+                      <span style={{ ...mono, fontSize:7, color:"#f59e0b" }}>no dataset — manual add</span>
                     </div>
                   )}
                 </div>
@@ -1355,7 +1355,7 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
             </span>
             <div style={{ flex:1, height:1, background:"#08172c" }}/>
             <span style={{ ...mono, fontSize:8, color:"#1e3a5f" }}>
-              Substituted into log files before ingestion  --  creates a correlated story across all steps
+              Substituted into log files before ingestion — creates a correlated story across all steps
             </span>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr) auto", gap:10, alignItems:"end" }}>
@@ -1390,7 +1390,7 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
             <div style={{ marginTop:10, padding:"7px 10px", background:"#030a17",
               border:"1px solid #10b98130", borderRadius:6,
               ...mono, fontSize:8, color:"#10b981", lineHeight:1.7 }}>
-              ✓ Entity profile active  --  replay will substitute these values into log fields (User, ComputerName, IpAddress, etc.)
+              ✓ Entity profile active — replay will substitute these values into log fields (User, ComputerName, IpAddress, etc.)
               and use {entityProfile.stepGapMinutes||15}m gaps between {flowSteps.length} steps
               ({flowSteps.length > 0 ? `${Math.round(((flowSteps.length-1)*(entityProfile.stepGapMinutes||15))/60*10)/10}h total window` : "no steps yet"})
             </div>
@@ -1410,7 +1410,7 @@ function ScenarioCanvas({ flowSteps, setFlowSteps, ghToken, repoIndex, indexLoad
                 <div style={{ fontSize:32, opacity:.15 }}>⛓</div>
                 <div style={{ ...mono, fontSize:11, color:"#1e3a5f", textAlign:"center", lineHeight:1.8 }}>
                   Describe a scenario above and hit Generate<br/>
-                   --  or switch to Browse and add techniques manually
+                  — or switch to Browse and add techniques manually
                 </div>
               </div>
             ) : (
@@ -1535,7 +1535,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
   // ── GitHub Secrets API helpers ─────────────────────────────────────────────
   // Secrets must be encrypted with the repo's libsodium public key before upload.
   // We load tweetnacl + tweetnacl-sealedbox lazily from CDN to avoid bundling.
-  // Inline Blake2b (blakejs MIT, https://github.com/dcposch/blakejs)  --  no package dep
+  // Inline Blake2b (blakejs MIT, https://github.com/dcposch/blakejs) — no package dep
   function _blake2b(input, outlen) {
     outlen = outlen || 64;
     const IV32 = new Uint32Array([
@@ -1609,7 +1609,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
     nonceInput.set(recipientPk, 32);
     const nonce       = _blake2b(nonceInput, 24);  // Blake2b nonce matches libsodium exactly
     const ciphertext  = nacl.box(msgBytes, nonce, recipientPk, ephemeral.secretKey);
-    if (!ciphertext) throw new Error("Encryption failed  --  bad public key?");
+    if (!ciphertext) throw new Error("Encryption failed — bad public key?");
     const sealed = new Uint8Array(32 + ciphertext.length);
     sealed.set(ephemeral.publicKey, 0);
     sealed.set(ciphertext, 32);
@@ -1650,7 +1650,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
       pkData = await getRepoPublicKey(repo, token);
     } catch(e) {
       log(`  ⚠  Could not fetch repo public key: ${e.message}`);
-      log("     Secrets NOT pushed  --  set them manually via gh CLI");
+      log("     Secrets NOT pushed — set them manually via gh CLI");
       return;
     }
     const { key_id: keyId, key: publicKey } = pkData;
@@ -1673,7 +1673,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
           ok++;
         } catch(e) { log(`  ✗  SECOPS_CUSTOMER_ID_${s}: ${e.message}`); fail++; }
       } else {
-        log(`  ⚠  SECOPS_CUSTOMER_ID_${s}  --  no customerId set, skipped`);
+        log(`  ⚠  SECOPS_CUSTOMER_ID_${s} — no customerId set, skipped`);
       }
 
       // Credentials JSON
@@ -1685,14 +1685,14 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
           ok++;
         } catch(e) {
           if (e instanceof SyntaxError) {
-            log(`  ✗  SECOPS_CREDENTIALS_${s}  --  credentials field is not valid JSON, skipped`);
+            log(`  ✗  SECOPS_CREDENTIALS_${s} — credentials field is not valid JSON, skipped`);
           } else {
             log(`  ✗  SECOPS_CREDENTIALS_${s}: ${e.message}`);
           }
           fail++;
         }
       } else {
-        log(`  ⚠  SECOPS_CREDENTIALS_${s}  --  no credentials set, skipped`);
+        log(`  ⚠  SECOPS_CREDENTIALS_${s} — no credentials set, skipped`);
       }
 
       log(`     ${t.label||t.name}: ${ok} set, ${fail} failed`);
@@ -1700,7 +1700,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
   }
 
   async function handlePush() {
-    if (!ghToken) { setPushLog(["✗  No GitHub token  --  add it in Config"]); setPushState("error"); return; }
+    if (!ghToken) { setPushLog(["✗  No GitHub token — add it in Config"]); setPushState("error"); return; }
     if (!repoValid) { setPushLog(["✗  Enter a valid repo (owner/repo)"]); setPushState("error"); return; }
     if (!ready) { setPushLog(["✗  Add tenants and an attack flow first"]); setPushState("error"); return; }
     setPushState("pushing"); setPushLog([`Pushing to ${pushRepo} …`]);
@@ -1717,7 +1717,7 @@ function DeployTab({ tenants, flowSteps, schedule, delta, ghToken, ghRepo, setGh
       const readme = `# demo-data\n\nLogstory attack data replay runner.\nGenerated by [logstory-orchestrator](https://keith-manville.github.io/logstory-orchestrator/).\n\n## Required secrets\n\n\`\`\`bash\n${secretCmds}\n\`\`\`\n`;
       await pushFile(pushRepo, "README.md", readme, ghToken, log);
       log(""); await pushSecrets(pushRepo, ghToken, log);
-      log(""); log("✅  All done  --  trigger a run below.");
+      log(""); log("✅  All done — trigger a run below.");
       setPushState("done");
       fetchRuns();
     } catch(e) {
@@ -1846,14 +1846,14 @@ ${tenants.map(t=>{
         run: |
           SECRET_NAME="SECOPS_CREDENTIALS_\${{ matrix.tenant_id }}"
           if [ -z "$SECOPS_CREDS" ]; then
-            echo "::warning::Secret $SECRET_NAME not set  --  skipping tenant \${{ matrix.tenant_id }}"
+            echo "::warning::Secret $SECRET_NAME not set — skipping tenant \${{ matrix.tenant_id }}"
             echo "           Add it: Settings -> Secrets -> Actions -> New secret, name: $SECRET_NAME"
             echo "skip=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           printf '%s' "$SECOPS_CREDS" > /tmp/secops_creds.json
           python3 -c "import json,sys; json.load(open('/tmp/secops_creds.json'))" || \\
-            { echo "::error::$SECRET_NAME is invalid JSON  --  paste the full service account key."; exit 1; }
+            { echo "::error::$SECRET_NAME is invalid JSON — paste the full service account key."; exit 1; }
           echo "skip=false" >> $GITHUB_OUTPUT
 
       - name: Cache downloaded datasets
@@ -1899,14 +1899,14 @@ ${flowSteps.map((s,i) => {
               "${s.mediaUrl}" -o "$CACHE_FILE"
           fi
 
-      - name: "Pass 1  --  Events: ${s.name}"
+      - name: "Pass 1 — Events: ${s.name}"
         if: steps.write_creds.outputs.skip != \'true\'
         env:
           SECOPS_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
           LOGSTORY_API_TYPE: rest
         run: |
           if [ -z "$SECOPS_CUSTOMER_ID" ]; then
-            echo "::warning::Secret SECOPS_CUSTOMER_ID_\${{ matrix.tenant_id }} not set  --  skipping"
+            echo "::warning::Secret SECOPS_CUSTOMER_ID_\${{ matrix.tenant_id }} not set — skipping"
             exit 0
           fi
           # Extract project_id from service account JSON
@@ -1920,7 +1920,7 @@ ${flowSteps.map((s,i) => {
             --region "\${{ matrix.region }}"\${{ matrix.ingestion_labels && format(' --labels {0}', matrix.ingestion_labels) || '' }} \\
             --timestamp-delta "${stepDelta}"${entityMapArg}
 
-      - name: "Pass 2  --  Entities: ${s.name}"
+      - name: "Pass 2 — Entities: ${s.name}"
         if: steps.write_creds.outputs.skip != \'true\' && \${{ github.event.inputs.skip_entities != 'true' }}
         env:
           SECOPS_CUSTOMER_ID: \${{ secrets[format('SECOPS_CUSTOMER_ID_{0}', matrix.tenant_id)] }}
@@ -1947,7 +1947,7 @@ ${flowSteps.map((s,i) => {
 `;
 
   const replayScript = `#!/usr/bin/env python3
-"""scripts/replay_dataset.py  --  Logstory wrapper for Splunk Attack Data"""
+"""scripts/replay_dataset.py — Logstory wrapper for Splunk Attack Data"""
 import argparse, os, shutil, subprocess, sys
 from pathlib import Path
 
@@ -1967,96 +1967,12 @@ def install_usecase(usecases_dir, log_file, log_type, entities=False):
     init = usecase_dir / "__init__.py"
     if not init.exists():
         init.touch()
+    return usecase_dir
 
 def uninstall_usecase(usecases_dir):
-    d = usecases_dir / USECASE_NAME
-    if d.exists():
-        shutil.rmtree(d)
-
-def ingest_entities_direct(ndjson_file, credentials_path, customer_id, region):
-    """
-    Ingest entity NDJSON directly via Chronicle REST API, bypassing logstory.
-    logstory's entity replay requires the logtype in logtypes_entities_timestamps.yaml
-    which only covers a small set of GCP/OKTA/AD types  --  not WINDOWS_SYSMON etc.
-    """
-    import json, urllib.request, urllib.error, datetime, time
-
-    # Load service account credentials
-    creds = json.loads(Path(credentials_path).read_text())
-
-    # Get an access token via service account JWT
-    try:
-        import google.auth
-        import google.auth.transport.requests
-        from google.oauth2 import service_account
-        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-        sa_creds = service_account.Credentials.from_service_account_info(creds, scopes=scopes)
-        request = google.auth.transport.requests.Request()
-        sa_creds.refresh(request)
-        token = sa_creds.token
-    except Exception as e:
-        print(f"[error] Failed to get access token: {e}")
-        sys.exit(1)
-
-    # Read NDJSON lines
-    lines = [l for l in ndjson_file.read_text().splitlines() if l.strip()]
-    if not lines:
-        print("[warn] No entity records to ingest")
-        return
-
-    # Region -> API host mapping
-    region_map = {
-        "US": "backstory.googleapis.com",
-        "EU": "europe-backstory.googleapis.com",
-        "ASIA": "asia-southeast1-backstory.googleapis.com",
-        "US-EAST1": "us-east1-backstory.googleapis.com",
-        "EU-WEST2": "europe-west2-backstory.googleapis.com",
-        "ASIA-SOUTH1": "asia-south1-backstory.googleapis.com",
-    }
-    host = region_map.get(region.upper(), "backstory.googleapis.com")
-    url = f"https://{host}/v1alpha/entities:batchCreate"
-
-    # Batch into chunks of 1000
-    chunk_size = 1000
-    total_sent = 0
-    for i in range(0, len(lines), chunk_size):
-        chunk = lines[i:i+chunk_size]
-        entities = []
-        for line in chunk:
-            try:
-                entities.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
-
-        if not entities:
-            continue
-
-        payload = json.dumps({
-            "customer_id": customer_id,
-            "entities": entities,
-        }).encode("utf-8")
-
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req) as resp:
-                total_sent += len(entities)
-                print(f"[info] Ingested {len(entities)} entities (total: {total_sent})")
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            print(f"[warn] Entity ingest HTTP {e.code}: {body[:200]}")
-            # Don't fail the whole job for entity errors
-        except Exception as e:
-            print(f"[warn] Entity ingest error: {e}")
-
-    print(f"[info] Entity ingestion complete: {total_sent} records sent")
+    usecase_dir = usecases_dir / USECASE_NAME
+    if usecase_dir.exists():
+        shutil.rmtree(usecase_dir)
 
 def main():
     p = argparse.ArgumentParser()
@@ -2074,10 +1990,13 @@ def main():
     creds_path = Path(args.credentials)
     if not creds_path.exists():
         sys.exit(f"[error] Credentials file not found: {creds_path}")
-    import json
     try:
-        json.loads(creds_path.read_text().strip())
-    except Exception as e:
+        import json
+        creds_content = creds_path.read_text().strip()
+        if not creds_content:
+            sys.exit("[error] Credentials file is empty")
+        json.loads(creds_content)
+    except json.JSONDecodeError as e:
         sys.exit(f"[error] Credentials not valid JSON: {e}")
 
     if not args.customer_id or not args.customer_id.strip():
@@ -2106,64 +2025,48 @@ def main():
                 k, v = pair.split("=", 1)
                 entity_map[k.strip()] = v.strip()
     if entity_map:
+        print(f"[info] Entity substitutions: {entity_map}")
         content = log_file.read_text(errors="replace")
         for key, value in entity_map.items():
             for pattern, tmpl in FIELD_PATTERNS.get(key, []):
                 content, n = _re.subn(pattern, tmpl.format(v=value), content)
-                if n: print(f"[info] {key}: {n} replacement(s)")
+                if n: print(f"[info]   {key}: {n} replacement(s)")
         suffix = log_file.suffix or ".log"
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode="w")
         tmp.write(content); tmp.close()
         log_file = Path(tmp.name)
 
-    print(f"Customer ID: {args.customer_id}")
-    print(f"Credentials path: {args.credentials}")
-
     usecases_dir = get_logstory_usecases_dir()
     print(f"[info] logstory usecases dir: {usecases_dir}")
 
+    replay_file = log_file
     if args.entities:
-        # Extract entities from log file
         sys.path.insert(0, str(Path(__file__).parent))
         from extract_entities import extract_entities
         ndjson = extract_entities(log_file, args.log_type)
         if not ndjson or not ndjson.strip():
-            print(f"[warn] No entities extracted  --  skipping")
-            sys.exit(0)
+            print(f"[warn] No entities extracted — skipping"); sys.exit(0)
         ndjson_file = log_file.with_suffix(".ndjson")
         ndjson_file.write_text(ndjson)
-        count = len(ndjson.splitlines())
-        print(f"[info] Extracted {count} entity records")
-        # Ingest directly via API (bypasses logstory's YAML logtype restriction)
-        ingest_entities_direct(ndjson_file, args.credentials, args.customer_id, args.region)
-        sys.exit(0)
-
-    # Events pass  --  use logstory as normal
-    # Normalize Sysmon XML timestamps so logstory can find and rewrite them to now
-    # Splunk attack data uses: <Data Name='UtcTime'>2021-01-01 12:00:00.000</Data>
-    # logstory expects:        "UtcTime": "2021-01-01 12:00:00"
-    if args.log_type == "WINDOWS_SYSMON":
-        content = log_file.read_text(errors="replace")
-        normalized, n = _re.subn(
-            r"<Data Name=.UtcTime.>(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})[^<]*</Data>",
-            lambda m: f'"UtcTime": "{m.group(1)}"',
-            content
-        )
-        if n:
-            suffix = log_file.suffix or ".log"
-            tmp2 = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode="w")
-            tmp2.write(normalized); tmp2.close()
-            log_file = Path(tmp2.name)
-            print(f"[info] Normalized {n} WINDOWS_SYSMON UtcTime timestamps for logstory")
-
-    install_usecase(usecases_dir, log_file, args.log_type, entities=False)
-    print(f"[info] Installed EVENTS/{args.log_type}")
+        replay_file = ndjson_file
+        print(f"[info] Extracted {len(ndjson.splitlines())} entity records")
+        # Ensure EVENTS/ exists alongside ENTITIES/ so logstory sees a valid usecase
+        events_dir = usecases_dir / USECASE_NAME / "EVENTS"
+        if not events_dir.exists():
+            install_usecase(usecases_dir, log_file, args.log_type, entities=False)
+        install_usecase(usecases_dir, replay_file, args.log_type, entities=True)
+        print(f"[info] Installed ENTITIES/{args.log_type}")
+    else:
+        install_usecase(usecases_dir, replay_file, args.log_type, entities=False)
+        print(f"[info] Installed EVENTS/{args.log_type}")
 
     common_args = [f"--timestamp-delta={args.timestamp_delta}",
                    f"--credentials-path={args.credentials}",
                    f"--customer-id={args.customer_id}",
                    f"--region={args.region}"]
     cmd = ["logstory", "replay", "usecase", USECASE_NAME, *common_args]
+    if args.entities:
+        cmd.append("--entities")
 
     try:
         print(f"[info] Running: {' '.join(cmd)}")
@@ -2175,10 +2078,10 @@ def main():
 
 if __name__ == "__main__":
     main()
-`;
+`
 
   const entityExtractStandalone = `#!/usr/bin/env python3
-"""scripts/extract_entities.py  --  extract UDM entity NDJSON from Splunk Attack Data logs"""
+"""scripts/extract_entities.py — extract UDM entity NDJSON from Splunk Attack Data logs"""
 import json, re, sys
 from pathlib import Path
 from datetime import datetime, timezone
@@ -2334,7 +2237,7 @@ if __name__ == "__main__":
         {!ghToken && (
           <div style={{ marginTop:10, padding:"8px 12px", background:"#1a0f00",
             border:"1px solid #f59e0b28", borderRadius:6, ...mono, fontSize:10, color:"#f59e0b" }}>
-            ⚠ No GitHub token  --  add it in the Config tab.
+            ⚠ No GitHub token — add it in the Config tab.
           </div>
         )}
       </Card>
@@ -2422,8 +2325,8 @@ if __name__ == "__main__":
                 <div style={{ padding:"10px 14px", background:"#030a17",
                   borderLeft:"3px solid #0c1e38", marginBottom:2, animation:"slideUp .15s" }}>
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
-                    {[["Run #",j.runNumber],["Trigger",j.trigger],["Branch",j.branch||" -- "],["Actor",j.actor||" -- "],
-                      ["Started",fmt(j.startedAt)],["Status",j.status],["Duration",j.duration>0?`${j.duration}s`:" -- "],["ID",j.id]
+                    {[["Run #",j.runNumber],["Trigger",j.trigger],["Branch",j.branch||"—"],["Actor",j.actor||"—"],
+                      ["Started",fmt(j.startedAt)],["Status",j.status],["Duration",j.duration>0?`${j.duration}s`:"—"],["ID",j.id]
                     ].map(([k,v])=>(
                       <div key={k}>
                         <div style={{...mono, fontSize:8, color:"#1e3a5f", marginBottom:2}}>{k.toUpperCase()}</div>
