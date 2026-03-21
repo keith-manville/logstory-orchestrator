@@ -643,7 +643,7 @@ function ChainNode({ step, index, total, onRemove, onMoveLeft, onMoveRight, onSw
       {/* connector arrow (not last) */}
       {index < total - 1 && (
         <div style={{ position:"absolute", right:-18, top:"50%", transform:"translateY(-50%)",
-          color:"#0e1e35", fontSize:14, zIndex:2 }}>-></div>
+          color:"#0e1e35", fontSize:14, zIndex:2 }}>{"->"}</div>
       )}
     </div>
   );
@@ -918,7 +918,7 @@ function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setD
           </div>
         </div>
         <div style={{ ...mono, fontSize:7, color:"#0c1e38", letterSpacing:"0.16em" }}>
-          SPLUNK ATTACK DATA -> GOOGLE SECOPS
+          {"SPLUNK ATTACK DATA -> GOOGLE SECOPS"}
         </div>
       </div>
 
@@ -995,7 +995,7 @@ function SidebarConfig({ tenants, setTenants, schedule, setSchedule, delta, setD
           <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer"
             style={{ color:"#3d5a7a", textDecoration:"none" }}
             onMouseEnter={e=>e.target.style.color="#22d3ee"}
-            onMouseLeave={e=>e.target.style.color="#3d5a7a"}>get a key -></a>
+            onMouseLeave={e=>e.target.style.color="#3d5a7a"}>{"get a key ->"}</a>
         </div>
       </div>
 
@@ -2138,7 +2138,7 @@ def main():
         count = len(ndjson.splitlines())
         print(f"[info] Extracted {count} entity records")
         # Ingest directly via API (bypasses logstory's YAML logtype restriction)
-        ingest_entities_direct(ndjson_file, args.credentials, args.customer_id, args.region)
+        ingest_entities_direct(ndjson_file, args.credentials, args.customer_id, args.region, args.log_type)
         sys.exit(0)
 
     # Events pass  --  use logstory as normal
@@ -2436,7 +2436,7 @@ if __name__ == "__main__":
                   </div>
                   {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer"
                     style={{...mono, fontSize:10, color:"#22d3ee", textDecoration:"none", display:"block", marginTop:8}}>
-                    -> view on GitHub ↗</a>}
+                    {"-> view on GitHub ↗"}</a>}
                 </div>
               )}
             </div>
